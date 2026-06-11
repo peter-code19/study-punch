@@ -6,7 +6,7 @@
 const SUPABASE_URL = 'https://icxyuscrfsnjlexeejtp.supabase.com';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljeHl1c2NyZnNuamxleGVlanRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjAyOTQsImV4cCI6MjA5NjczNjI5NH0.2tbJGgLShQXEdu644kINqpRYtuHC_xhnMX34asJQgo4';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = window.supabase(SUPABASE_URL, SUPABASE_KEY);
 
 // ===== 全局状态 =====
 const STATE = {
