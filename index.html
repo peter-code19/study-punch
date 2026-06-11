@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#4f46e5">
+  <title>学习打卡</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="data:application/json,{}">
+</head>
+<body>
+  <div id="app"></div>
+
+  <nav id="tabbar" class="tabbar hidden">
+    <a href="#home" class="tab-item" data-tab="home">
+      <span class="tab-icon">🏠</span>
+      <span class="tab-label">首页</span>
+    </a>
+    <a href="#profile" class="tab-item" data-tab="profile">
+      <span class="tab-icon">📊</span>
+      <span class="tab-label">统计</span>
+    </a>
+    <a href="#groups" class="tab-item" data-tab="groups">
+      <span class="tab-icon">👥</span>
+      <span class="tab-label">群组</span>
+    </a>
+  </nav>
+
+  <div id="modal-overlay" class="modal-overlay hidden" onclick="handleOverlayClick(event)">
+    <div id="modal-content" class="modal-content"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
