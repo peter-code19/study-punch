@@ -108,26 +108,48 @@ function setLoading(el, loading) {
 
 // ====== 初始化 =====
 async function init() {
-  // 检查本地存储的用户
-  const uid = localStorage.getItem('study_user_id');
-  if (uid) {
-    const { data } = await supabase.from('users').select('*').eq('id', uid).single();
-    if (data) {
-      STATE.user = data;
-      const { data: active } = await supabase.from('sessions').select('*').eq('user_id', uid).is('end_time', null).order('start_time', { ascending: false }).limit(1).single();
-      STATE.activeSession = active;
-    } else {
-      localStorage.removeItem('study_user_id');
-    }
-  }
+  // 先渲染页面（不依赖 Supabase）
   route();
   window.addEventListener('hashchange', route);
+
+  // 然后检查本地存储的用户会话
+  const uid = localStorage.getItem('study_user_id');
+  if (uid) {
+    try {
+      const { data } = await supabase.from('users').select('*').eq('id', uid).single();
+      if (data) {
+        STATE.user = data;
+        const { data: active } = await supabase.from('sessions').select('*').eq('user_id', uid).is('end_time', null).order('start_time', { ascending: false }).limit(1).single();
+        STATE.activeSession = active;
+        // 有用户数据，跳转到首页
+        route();
+      } else {
+        localStorage.removeItem('study_user_id');
+      }
+    } catch(e) {
+      // Supabase 加载失败，停留在登录页，不影响使用
+      console.log('Supabase 连接中...');
+    }
+  }
 }
 
 // ===== 路由 =====
 function route() {
   stopPoll(); stopTimer();
   const hash = window.location.hash.slice(1) || 'login';
+
+  // 如果 Supabase 还没加载好，显示等待页面
+  if (typeof window.supabase === 'undefined') {
+    document.getElementById('app').innerHTML = `
+      <div class="login-page">
+        <div class="login-logo">⏳</div>
+        <h1 class="login-title">加载中...</h1>
+        <p class="login-subtitle">正在连接云端服务</p>
+      </div>`;
+    setTimeout(route, 500);
+    return;
+  }
+
   if (!STATE.user && hash !== 'login') { window.location.hash = '#login'; return; }
   if (STATE.user && hash === 'login') { window.location.hash = '#home'; return; }
 
