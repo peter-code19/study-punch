@@ -34,10 +34,10 @@ function db() {
       range(from,to) { this._range = `&limit=${to-from+1}&offset=${from}`; return this; },
       single() { this._single = true; return this; },
 
-      async _fetch(method, body) {
+      async _fetch(method, body, extraHeaders) {
         let url = `${SUPABASE_URL}/rest/v1/${this._table}?select=${this._select||'*'}${this._filters}${this._order}${this._range}`;
         if (this._single) url += '&limit=1';
-        const opts = { method, headers };
+        const opts = { method, headers: {...headers, ...extraHeaders} };
         if (body) opts.body = JSON.stringify(body);
         const res = await fetch(url, opts);
         if (!res.ok) {
@@ -52,7 +52,7 @@ function db() {
 
       insert(body) { return this._fetch('POST', body); },
       update(body) { return this._fetch('PATCH', body); },
-      upsert(body, opts) { return this._fetch('POST', body); },
+      upsert(body, opts) { return this._fetch('POST', body, {'Prefer':'resolution=merge-duplicates,return=representation'}); },
       delete() { return this._fetch('DELETE'); },
     })
   };
@@ -759,21 +759,38 @@ async function loadAdminData(){
 
 async function deleteUser(uid){
   if(!confirm(`确定删除用户「${uid}」及其所有学习记录吗？此操作不可恢复。`))return;
+  let deleted = [];
   try{
     await db().from('sessions').eq('user_id',uid).delete();
+    deleted.push('学习记录');
     await db().from('group_members').eq('user_id',uid).delete();
+    deleted.push('群组成员关系');
     await db().from('users').eq('id',uid).delete();
-    toast('用户已删除');loadAdminData();
-  }catch(e){toast('删除失败','error');}
+    deleted.push('用户账号');
+    toast('用户已删除','success');
+    loadAdminData();
+  }catch(e){
+    const done = deleted.length > 0 ? `（已清理: ${deleted.join('、')}）` : '';
+    toast(`删除失败: ${e.message || '未知错误'}${done}`,'error');
+    if(deleted.length > 0) loadAdminData();
+  }
 }
 
 async function deleteGroup(gid){
   if(!confirm(`确定删除群组「${gid}」吗？此操作不可恢复。`))return;
+  let deleted = [];
   try{
     await db().from('group_members').eq('group_id',gid).delete();
+    deleted.push('成员关系');
     await db().from('groups_table').eq('id',gid).delete();
-    toast('群组已删除');loadAdminData();
-  }catch(e){toast('删除失败','error');}
+    deleted.push('群组');
+    toast('群组已删除','success');
+    loadAdminData();
+  }catch(e){
+    const done = deleted.length > 0 ? `（已清理: ${deleted.join('、')}）` : '';
+    toast(`删除失败: ${e.message || '未知错误'}${done}`,'error');
+    if(deleted.length > 0) loadAdminData();
+  }
 }
 
 // ===== 启动！=====
