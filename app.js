@@ -2,7 +2,7 @@
    学习打卡 PWA v2.1 — 零外部依赖，纯 fetch 调用 Supabase
    ================================================================ */
 
-const SUPABASE_URL = 'https://icxyuscrfsnjlexeejtp.supabase.com';
+const SUPABASE_URL = 'https://icxyuscrfsnjlexeejtp.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImljeHl1c2NyZnNuamxleGVlanRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjAyOTQsImV4cCI6MjA5NjczNjI5NH0.2tbJGgLShQXEdu644kINqpRYtuHC_xhnMX34asJQgo4';
 
 // ===== 轻量 Supabase 请求封装 (零依赖) =====
@@ -48,7 +48,7 @@ function db() {
         return this._single ? data[0] || null : data;
       },
 
-      then(resolve) { return this._fetch('GET').then(resolve); },  // await 支持
+      then(resolve, reject) { return this._fetch('GET').then(resolve, reject); },
 
       insert(body) { return this._fetch('POST', body); },
       update(body) { return this._fetch('PATCH', body); },
@@ -223,18 +223,22 @@ async function doLogin(){
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='进入中...';
   try{
+    console.log('开始登录:', id);
     let user=await db().from('users').select().eq('id',id).single();
+    console.log('查询结果:', user);
     if(!user){
       const hue=Math.floor(Math.random()*360);
-      user=await db().from('users').insert({id,name,color:`hsl(${hue},55%,50%)`});
-      user=user[0];
+      const result=await db().from('users').insert({id,name,color:`hsl(${hue},55%,50%)`});
+      console.log('插入结果:', result);
+      user=result[0];
       toast('注册成功！🎉','success');
     }
     localStorage.setItem('study_user_id',user.id);
     STATE.user=user;
     window.location.hash='#home';
   }catch(e){
-    toast('连接失败，请检查网络后重试','error');
+    console.error('登录错误:', e.message);
+    toast('连接失败: ' + (e.message || '网络错误'), 'error');
     btn.disabled=false;btn.textContent='进入打卡';
   }
 }
