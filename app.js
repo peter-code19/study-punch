@@ -442,14 +442,15 @@ async function loadMembers(){
       const total=(stats||[]).reduce((s,r)=>s+(r.duration_sec||0),0);
       return {...m,is_online:!!active,online_since:active?.start_time,total_sec:total,session_count:(stats||[]).length};
     }));
+    const isAllMembers = STATE.currentGroup === '__all__';
     grid.innerHTML=enriched.map(m=>`
-      <div class="member-item" onclick="showMemberDetail('${esc(m.id)}')">
+      <div class="member-item" ${isAllMembers?'':`onclick="showMemberDetail('${esc(m.id)}')"`} style="${isAllMembers?'cursor:default;':''}">
         <div class="avatar-wrapper">
           <div class="avatar avatar-sm" style="background:${hsl2hex(m.color)}">${getIni(m.name)}</div>
           <span class="status-dot ${m.is_online?'online':'offline'}"></span>
         </div>
         <div class="member-name">${esc(m.name)}</div>
-        <div class="member-status">${m.is_online?'学习中 '+fmtTime(m.online_since):m.total_sec>0?'今日 '+fmtDur(m.total_sec):'未打卡'}</div>
+        <div class="member-status">${m.is_online?'学习中 '+fmtTime(m.online_since):'离线'}</div>
       </div>`).join('');
   }catch(e){console.log('加载成员失败');}
 }
