@@ -68,6 +68,7 @@ const STATE = {
   historyPage: 1,
   pollTimer: null,
   timerInterval: null,
+  clockTimer: null,
 };
 
 // ===== 工具函数 =====
@@ -102,22 +103,10 @@ function getIni(name) {
   return /[一-鿿]/.test(c)?c:c.toUpperCase();
 }
 function isWeekend(d){const day=(d||new Date()).getDay();return day===0||day===6;}
-function isInWindow(){const h=new Date().getHours();return h>=10&&h<22;}
-function getWindowStatus(){
-  const n=new Date(),h=n.getHours(),m=n.getMinutes();
-  const type=isWeekend(n)?'节假日':'工作日';
-  if(h>=10&&h<22){
-    const rm=(21-h)*60+(59-m);
-    return {text:`${type} · 学习窗口中 · 剩余 ${Math.floor(rm/60)}时${rm%60}分`,cls:'ok'};
-  }else if(h<10){
-    const wm=(9-h)*60+(59-m);
-    return {text:`${type} · 距窗口开启还有 ${Math.floor(wm/60)}时${wm%60}分`,cls:'waiting'};
-  }
-  return {text:`${type} · 今日窗口已结束 (10:00-22:00)`,cls:'closed'};
-}
+function isInWindow(){return true;}
 function getTodayLabel(){
   const n=new Date(),w=['日','一','二','三','四','五','六'];
-  return `${n.getMonth()+1}月${n.getDate()}日 星期${w[n.getDay()]} · ${isWeekend(n)?'节假日':'工作日'}`;
+  return `${n.getMonth()+1}月${n.getDate()}日 星期${w[n.getDay()]}`;
 }
 
 // ===== Toast =====
@@ -174,7 +163,7 @@ async function init(){
 
 // ===== 路由 =====
 function route(){
-  stopPoll();stopTimer();
+  stopPoll();stopTimer();stopClock();
   const hash=window.location.hash.slice(1)||'login';
   if(!STATE.user&&hash!=='login'){window.location.hash='#login';return;}
   if(STATE.user&&hash==='login'){window.location.hash='#home';return;}
@@ -287,6 +276,7 @@ function renderHome(){
       <button id="punch-cancel" class="btn btn-outline mt-16 hidden" onclick="cancelPunch()" style="padding:10px 20px;font-size:14px;">取消本次学习</button>
       <div id="punch-hint" style="font-size:13px;color:var(--text-muted);margin-top:10px;"></div>
     </div>
+    <div id="live-clock" style="text-align:center;font-size:16px;color:var(--text);font-weight:600;margin:0 0 16px;"></div>
     <div class="section-title">👥 学习伙伴</div>
     <div id="group-selector" class="group-selector"></div>
     <div id="member-grid" class="member-grid"></div>
@@ -295,18 +285,26 @@ function renderHome(){
   updateWinBanner();
   updatePunchUI();
   loadGroupsAndMembers();
+  startClock();
   startPoll();
 }
+
+function startClock(){
+  stopClock();
+  const tick=()=>{
+    const el=document.getElementById('live-clock');
+    if(el){const n=new Date();el.textContent='🕐 '+pd(n.getHours())+':'+pd(n.getMinutes())+':'+pd(n.getSeconds());}
+  };
+  tick();STATE.clockTimer=setInterval(tick,1000);
+}
+function stopClock(){if(STATE.clockTimer){clearInterval(STATE.clockTimer);STATE.clockTimer=null;}}
 
 // 学习窗口
 function updateWinBanner(){
   const b=document.getElementById('study-window-banner');
   if(!b)return;
-  const s=getWindowStatus();
-  const cm={ok:['#f0fdf4','#166534','🟢'],waiting:['#fefce8','#854d0e','🟡'],closed:['#fef2f2','#991b1b','🔴']};
-  const c=cm[s.cls]||['#f8fafc','#475569','📅'];
-  b.style.background=c[0];b.style.color=c[1];
-  b.innerHTML=`<div style="display:flex;align-items:center;gap:8px;"><span>${c[2]}</span><span style="font-size:13px;font-weight:600;">${getTodayLabel()}</span></div><div style="font-size:12px;margin-top:4px;">${s.text}</div><div style="font-size:11px;margin-top:2px;opacity:0.7;">规定学习时间：每天 10:00 - 22:00（含节假日）</div>`;
+  b.style.background='#f0fdf4';b.style.color='#166534';
+  b.innerHTML=`<div style="display:flex;align-items:center;gap:8px;"><span>🟢</span><span style="font-size:13px;font-weight:600;">${getTodayLabel()}</span></div><div style="font-size:12px;margin-top:4px;">全天可打卡，随时开始学习！</div>`;
 }
 
 // 打卡 UI
@@ -331,7 +329,7 @@ function updatePunchUI(){
     btn.textContent='📖 开始学习';btn.className='btn btn-success btn-xl btn-block';
     timerEl.classList.add('hidden');ctEl.classList.add('hidden');
     cancelEl.classList.add('hidden');
-    hintEl.textContent=isInWindow()?'点击开始，记录你的学习时光':'💡 '+getWindowStatus().text+'，也可以提前开始';
+    hintEl.textContent='点击开始，记录你的学习时光';
   }
 }
 
@@ -499,7 +497,7 @@ async function showMemberDetail(uid){
 }
 
 async function doLogout(){
-  stopPoll();stopTimer();
+  stopPoll();stopTimer();stopClock();
   localStorage.removeItem('study_user_id');
   STATE.user=null;STATE.activeSession=null;
   window.location.hash='#login';
@@ -619,6 +617,7 @@ function renderGroups(){
       <div class="setting-item"><span>当前用户</span><span style="color:var(--text-muted);">${esc(STATE.user.name)} (@${esc(STATE.user.id)})</span></div>
       <div class="setting-item"><span>学习时间规定</span><span style="color:var(--text-muted);font-size:13px;">工作日及节假日 10:00 - 22:00</span></div>
       <div class="setting-item" style="cursor:pointer;" onclick="showAbout()"><span>关于学习打卡</span><span>📚</span></div>
+      <div class="setting-item"><span>联系方式</span><span style="color:var(--text-muted);font-size:12px;">QQ: 646335835</span></div>
     </div>`;
   loadMyGroups();
 }
@@ -707,7 +706,10 @@ function showAbout(){
       <div style="font-size:18px;font-weight:700;">学习打卡 v2.1</div>
       <div style="color:var(--text-muted);margin-top:4px;">云端版 · 随时随地</div>
       <div style="margin-top:20px;font-size:14px;color:var(--text-secondary);line-height:1.8;">
-        📌 记录每日学习任务<br>👥 创建群组互相监督<br>📊 查看学习时长统计<br>⏰ 学习时间 10:00 - 22:00
+        📌 记录每日学习任务<br>👥 创建群组互相监督<br>📊 查看学习时长统计<br>🕐 全天可打卡
+      </div>
+      <div style="margin-top:20px;font-size:13px;color:var(--text-muted);">
+        如果有更好建议请联系作者<br>QQ: 646335835
       </div></div>
     <button class="btn btn-outline btn-block" onclick="closeModal()">关闭</button>`);
 }
