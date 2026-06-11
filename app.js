@@ -169,7 +169,7 @@ function route(){
   if(STATE.user&&hash==='login'){window.location.hash='#home';return;}
 
   document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='admin');
-  if(STATE.user&&STATE.user.is_admin) document.querySelectorAll('.admin-only').forEach(el=>el.classList.remove('hidden'));
+  document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden', !(STATE.user&&STATE.user.is_admin)));
 
   switch(hash){
     case'login':renderLogin();break;
