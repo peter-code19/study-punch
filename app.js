@@ -190,6 +190,14 @@ function route(){
   }
 }
 
+// ====== 加密 ======
+async function sha256(text){
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
 // ====== 登录页 ======
 function renderLogin(){
   document.getElementById('app').innerHTML=`
@@ -199,19 +207,25 @@ function renderLogin(){
       <p class="login-subtitle">和朋友们一起坚持学习</p>
       <div class="login-form">
         <div class="form-group">
-          <label class="form-label">设置你的 ID</label>
+          <label class="form-label">ID</label>
           <input id="login-id" class="input" placeholder="例如: alex、小明" maxlength="20" autocomplete="off">
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">首次使用自动注册，请牢记你的 ID</div>
         </div>
         <div class="form-group">
           <label class="form-label">显示名称（可选）</label>
           <input id="login-name" class="input" placeholder="让大家认识你" maxlength="15">
         </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input id="login-pw" class="input" type="password" placeholder="设置/输入密码" maxlength="30">
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+          🔒 首次输入 ID+密码 = 注册 ；再次输入相同 ID+密码 = 登录
+        </div>
         <button id="login-btn" class="btn btn-primary btn-block btn-lg" onclick="doLogin()">进入打卡</button>
       </div>
     </div>`;
   document.getElementById('login-id').focus();
-  ['login-id','login-name'].forEach(id=>{
+  ['login-id','login-name','login-pw'].forEach(id=>{
     document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   });
 }
@@ -219,17 +233,28 @@ function renderLogin(){
 async function doLogin(){
   const id=document.getElementById('login-id').value.trim();
   const name=document.getElementById('login-name').value.trim()||id;
+  const pw=document.getElementById('login-pw').value.trim();
   if(!id)return toast('请输入 ID','error');
+  if(!pw)return toast('请输入密码','error');
   const btn=document.getElementById('login-btn');
   btn.disabled=true;btn.textContent='进入中...';
   try{
-    console.log('开始登录:', id);
+    const pwHash=await sha256(pw);
     let user=await db().from('users').select().eq('id',id).single();
-    console.log('查询结果:', user);
-    if(!user){
+    if(user){
+      // 用户已存在
+      if(user.password_hash){
+        // 有密码 → 验证密码
+        if(user.password_hash!==pwHash) return toast('密码错误', 'error'), btn.disabled=false, void(btn.textContent='进入打卡');
+      } else {
+        // 旧用户无密码 → 首次设置密码
+        await db().from('users').update({password_hash:pwHash}).eq('id',id);
+        toast('已设置密码！🔒','success');
+      }
+    } else {
+      // 新用户 → 注册
       const hue=Math.floor(Math.random()*360);
-      const result=await db().from('users').insert({id,name,color:`hsl(${hue},55%,50%)`});
-      console.log('插入结果:', result);
+      const result=await db().from('users').insert({id,name,color:`hsl(${hue},55%,50%)`,password_hash:pwHash});
       user=result[0];
       toast('注册成功！🎉','success');
     }
@@ -237,7 +262,6 @@ async function doLogin(){
     STATE.user=user;
     window.location.hash='#home';
   }catch(e){
-    console.error('登录错误:', e.message);
     toast('连接失败: ' + (e.message || '网络错误'), 'error');
     btn.disabled=false;btn.textContent='进入打卡';
   }
