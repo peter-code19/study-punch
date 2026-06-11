@@ -248,7 +248,7 @@ async function doLogin(){
         if(user.password_hash!==pwHash) return toast('密码错误', 'error'), btn.disabled=false, void(btn.textContent='进入打卡');
       } else {
         // 旧用户无密码 → 首次设置密码
-        await db().from('users').update({password_hash:pwHash}).eq('id',id);
+        await db().from('users').eq('id',id).update({password_hash:pwHash});
         toast('已设置密码！🔒','success');
       }
     } else {
@@ -377,7 +377,7 @@ async function confirmEnd(){
   const st=new Date(STATE.activeSession.start_time);
   const dur=Math.floor((new Date(endTime)-st)/1000);
   try{
-    await db().from('sessions').update({end_time:endTime,content:content||STATE.activeSession.content,duration_sec:dur}).eq('id',STATE.activeSession.id);
+    await db().from('sessions').eq('id',STATE.activeSession.id).update({end_time:endTime,content:content||STATE.activeSession.content,duration_sec:dur});
     STATE.activeSession=null;
     closeModal();stopTimer();toast('学习打卡完成！🎉','success');
     updatePunchUI();loadMembers();
@@ -387,7 +387,7 @@ async function confirmEnd(){
 async function cancelPunch(){
   if(!confirm('确定要取消吗？不会保存记录。'))return;
   try{
-    await db().from('sessions').delete().eq('id',STATE.activeSession.id);
+    await db().from('sessions').eq('id',STATE.activeSession.id).delete();
     STATE.activeSession=null;stopTimer();updatePunchUI();loadMembers();toast('已取消');
   }catch(e){toast('操作失败','error');}
 }
@@ -647,7 +647,7 @@ function copyCode(code){
 
 async function leaveGroup(gid){
   if(!confirm('确定退出吗？'))return;
-  try{await db().from('group_members').delete().eq('group_id',gid).eq('user_id',STATE.user.id);toast('已退出');loadMyGroups();}
+  try{await db().from('group_members').eq('group_id',gid).eq('user_id',STATE.user.id).delete();toast('已退出');loadMyGroups();}
   catch(e){toast('操作失败','error');}
 }
 
