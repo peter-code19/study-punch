@@ -168,13 +168,15 @@ function route(){
   if(!STATE.user&&hash!=='login'){window.location.hash='#login';return;}
   if(STATE.user&&hash==='login'){window.location.hash='#home';return;}
 
-  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups');
+  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='admin');
+  if(STATE.user&&STATE.user.is_admin) document.querySelectorAll('.admin-only').forEach(el=>el.classList.remove('hidden'));
 
   switch(hash){
     case'login':renderLogin();break;
     case'home':renderHome();setTab('home');break;
     case'profile':renderProfile();setTab('profile');break;
     case'groups':renderGroups();setTab('groups');break;
+    case'admin':renderAdmin();setTab('admin');break;
     default:window.location.hash='#home';
   }
 }
@@ -712,6 +714,65 @@ function showAbout(){
         如果有更好建议请联系作者<br>QQ: 646335835
       </div></div>
     <button class="btn btn-outline btn-block" onclick="closeModal()">关闭</button>`);
+}
+
+// ====== 管理页 ======
+async function renderAdmin(){
+  if(!STATE.user||!STATE.user.is_admin){window.location.hash='#home';return;}
+  document.getElementById('app').innerHTML=`
+    <div style="padding:20px 16px 8px;"><h2 style="font-size:22px;font-weight:800;">⚙️ 管理面板</h2></div>
+    <div class="section-title">👤 用户管理</div>
+    <div id="admin-users" class="history-list"></div>
+    <div class="section-title">👥 群组管理</div>
+    <div id="admin-groups" class="history-list"></div>`;
+  loadAdminData();
+}
+
+async function loadAdminData(){
+  try{
+    const users=await db().from('users').select().order('created_at','desc');
+    const groups=await db().from('groups_table').select().order('created_at','desc');
+    // 获取每个群组的成员数
+    const enriched=await Promise.all((groups||[]).map(async g=>{
+      const gm=await db().from('group_members').select('user_id').eq('group_id',g.id);
+      return {...g,member_count:(gm||[]).length};
+    }));
+    document.getElementById('admin-users').innerHTML=(users||[]).map(u=>`
+      <div class="history-item" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;">${esc(u.name)} <span style="color:var(--text-muted);font-size:12px;">@${esc(u.id)}</span></div>
+          <div style="font-size:12px;color:var(--text-muted);">${u.is_admin?'🔧 管理员 · ':''}注册于 ${fmtDate(u.created_at)}</div>
+        </div>
+        <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;color:var(--danger);" onclick="deleteUser('${esc(u.id)}')">删除</button>
+      </div>`).join('');
+    document.getElementById('admin-groups').innerHTML=(enriched||[]).map(g=>`
+      <div class="history-item" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;">${esc(g.name)} <span style="color:var(--primary);font-size:12px;">${esc(g.id)}</span></div>
+          <div style="font-size:12px;color:var(--text-muted);">${g.member_count} 名成员 · 创建者: ${esc(g.created_by)}</div>
+        </div>
+        <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;color:var(--danger);" onclick="deleteGroup('${esc(g.id)}')">删除</button>
+      </div>`).join('');
+  }catch(e){toast('加载管理数据失败','error');}
+}
+
+async function deleteUser(uid){
+  if(!confirm(`确定删除用户「${uid}」及其所有学习记录吗？此操作不可恢复。`))return;
+  try{
+    await db().from('sessions').eq('user_id',uid).delete();
+    await db().from('group_members').eq('user_id',uid).delete();
+    await db().from('users').eq('id',uid).delete();
+    toast('用户已删除');loadAdminData();
+  }catch(e){toast('删除失败','error');}
+}
+
+async function deleteGroup(gid){
+  if(!confirm(`确定删除群组「${gid}」吗？此操作不可恢复。`))return;
+  try{
+    await db().from('group_members').eq('group_id',gid).delete();
+    await db().from('groups_table').eq('id',gid).delete();
+    toast('群组已删除');loadAdminData();
+  }catch(e){toast('删除失败','error');}
 }
 
 // ===== 启动！=====
