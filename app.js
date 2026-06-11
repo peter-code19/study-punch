@@ -617,7 +617,7 @@ function renderGroups(){
     <div class="section-title">⚙️ 设置</div>
     <div class="card" style="margin:0 16px;">
       <div class="setting-item"><span>当前用户</span><span style="color:var(--text-muted);">${esc(STATE.user.name)} (@${esc(STATE.user.id)})</span></div>
-      <div class="setting-item"><span>学习时间规定</span><span style="color:var(--text-muted);font-size:13px;">工作日及节假日 10:00 - 22:00</span></div>
+      <div class="setting-item"><span>学习时间规定</span><span style="color:var(--text-muted);font-size:13px;">全天 24 小时可打卡</span></div>
       <div class="setting-item" style="cursor:pointer;" onclick="showAbout()"><span>关于学习打卡</span><span>📚</span></div>
       <div class="setting-item"><span>联系方式</span><span style="color:var(--text-muted);font-size:12px;">QQ: 646335835</span></div>
     </div>`;
