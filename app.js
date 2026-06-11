@@ -140,8 +140,31 @@ function startPoll(){
 function stopPoll(){if(STATE.pollTimer){clearInterval(STATE.pollTimer);STATE.pollTimer=null;}}
 function stopTimer(){if(STATE.timerInterval){clearInterval(STATE.timerInterval);STATE.timerInterval=null;}}
 
+// ====== 深色模式 ======
+function getTheme() { return localStorage.getItem('theme') || 'light'; }
+function setTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('theme', t);
+}
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  setTheme(next);
+  updateThemeToggleUI();
+  if (window.location.hash === '#home' || window.location.hash === '') updateWinBanner();
+}
+function updateThemeToggleUI() {
+  const isDark = getTheme() === 'dark';
+  document.querySelectorAll('.theme-toggle-icon').forEach(el => {
+    el.textContent = isDark ? '☀️' : '🌙';
+    el.title = isDark ? '切换浅色模式' : '切换深色模式';
+  });
+}
+
 // ===== 初始化 =====
 async function init(){
+  // 恢复主题
+  setTheme(getTheme());
+
   // 立即渲染
   route();
   window.addEventListener('hashchange',route);
@@ -179,6 +202,7 @@ function route(){
     case'admin':renderAdmin();setTab('admin');break;
     default:window.location.hash='#home';
   }
+  setTimeout(() => updateThemeToggleUI(), 0);
 }
 
 // ====== 加密 ======
@@ -268,6 +292,7 @@ function renderHome(){
         <div class="home-header-name">${esc(u.name)}</div>
         <div class="home-header-id">@${esc(u.id)}</div>
       </div>
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="切换深色模式"><span class="theme-toggle-icon">🌙</span></button>
       <button class="btn btn-outline" onclick="doLogout()" style="padding:8px 14px;font-size:13px;">退出</button>
     </div>
     <div id="study-window-banner" class="card" style="padding:12px 16px;margin:0 16px;"></div>
@@ -305,7 +330,7 @@ function stopClock(){if(STATE.clockTimer){clearInterval(STATE.clockTimer);STATE.
 function updateWinBanner(){
   const b=document.getElementById('study-window-banner');
   if(!b)return;
-  b.style.background='#f0fdf4';b.style.color='#166534';
+  b.style.background='';b.style.color='';b.className='card study-banner';
   b.innerHTML=`<div style="display:flex;align-items:center;gap:8px;"><span>🟢</span><span style="font-size:13px;font-weight:600;">${getTodayLabel()}</span></div><div style="font-size:12px;margin-top:4px;">全天可打卡，随时开始学习！</div>`;
 }
 
@@ -619,6 +644,7 @@ function renderGroups(){
     <div class="card" style="margin:0 16px;">
       <div class="setting-item"><span>当前用户</span><span style="color:var(--text-muted);">${esc(STATE.user.name)} (@${esc(STATE.user.id)})</span></div>
       <div class="setting-item"><span>学习时间规定</span><span style="color:var(--text-muted);font-size:13px;">全天 24 小时可打卡</span></div>
+      <div class="setting-item" style="cursor:pointer;" onclick="toggleTheme()"><span>深色模式</span><span class="theme-toggle-icon" style="font-size:20px;">🌙</span></div>
       <div class="setting-item" style="cursor:pointer;" onclick="showAbout()"><span>关于学习打卡</span><span>📚</span></div>
       <div class="setting-item"><span>联系方式</span><span style="color:var(--text-muted);font-size:12px;">QQ: 646335835</span></div>
     </div>`;

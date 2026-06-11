@@ -23,6 +23,26 @@
 }
 
 html { font-size: 16px; }
+
+/* ===== 深色模式 ===== */
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --text: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border: #334155;
+  --primary-bg: #1e3a5f;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.5);
+}
+[data-theme="dark"] .status-dot.offline { background: #475569; }
+[data-theme="dark"] .modal-overlay { background: rgba(0,0,0,0.6); }
+[data-theme="dark"] .toast { box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+[data-theme="dark"] .btn-outline { border-color: var(--border); }
+[data-theme="dark"] .btn-outline:hover { background: var(--primary-bg); }
+[data-theme="dark"] input.input,
+[data-theme="dark"] textarea.input { background: var(--card); color: var(--text); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
@@ -32,6 +52,7 @@ body {
   min-height: 100vh;
   display: flex;
   justify-content: center;
+  transition: background 0.3s, color 0.3s;
 }
 
 #app {
@@ -84,6 +105,10 @@ body {
   background: var(--card); border-radius: var(--radius);
   padding: 20px; box-shadow: var(--shadow); margin: 16px;
 }
+
+/* 学习窗口 banner */
+.study-banner { background: #f0fdf4; color: #166534; }
+[data-theme="dark"] .study-banner { background: #064e3b; color: #6ee7b7; }
 
 /* ===== 表单 ===== */
 .input {
@@ -278,6 +303,16 @@ textarea.input { resize: vertical; min-height: 80px; font-family: inherit; }
 .mt-16 { margin-top: 16px; }
 .mb-16 { margin-bottom: 16px; }
 .mx-16 { margin-left: 16px; margin-right: 16px; }
+
+/* ===== 深色模式切换按钮 ===== */
+.theme-toggle-btn {
+  width: 48px; height: 48px; border-radius: 50%;
+  border: 2px solid var(--border); background: var(--card);
+  font-size: 22px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  transition: all 0.3s; flex-shrink: 0; padding: 0; min-height: auto;
+}
+.theme-toggle-btn:active { transform: scale(0.9); }
 
 /* ===== 响应式 ===== */
 @media (min-width: 481px) {
