@@ -871,7 +871,7 @@ function renderMindMap() {
         <svg id="mm-svg"></svg>
       </div>
       <div class="mm-input-bar" id="mm-input-bar" style="${MMS.currentPartId==='__all__'?'display:none;':''}">
-        <input class="mm-input" id="mm-node-input" placeholder="输入学习内容，按回车添加..." maxlength="500">
+        <input class="mm-input" id="mm-node-input" placeholder="输入学习内容，按回车添加..." maxlength="5000">
         <button class="btn btn-primary" onclick="addMMNode()">添加</button>
       </div>
     </div>`;
