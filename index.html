@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -45,3 +46,52 @@
   <script src="app.js"></script>
 </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#4f46e5">
+  <title>学习打卡</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="data:application/json,{}">
+</head>
+<body>
+  <div id="app"></div>
+
+  <nav id="tabbar" class="tabbar hidden">
+    <a href="#home" class="tab-item" data-tab="home">
+      <span class="tab-icon">🏠</span>
+      <span class="tab-label">首页</span>
+    </a>
+    <a href="#profile" class="tab-item" data-tab="profile">
+      <span class="tab-icon">📊</span>
+      <span class="tab-label">统计</span>
+    </a>
+    <a href="#groups" class="tab-item" data-tab="groups">
+      <span class="tab-icon">👥</span>
+      <span class="tab-label">群组</span>
+    </a>
+    <a href="#mindmap" class="tab-item" data-tab="mindmap">
+      <span class="tab-icon">🕸️</span>
+      <span class="tab-label">脑图</span>
+    </a>
+    <a href="#admin" class="tab-item admin-only hidden" data-tab="admin">
+      <span class="tab-icon">⚙️</span>
+      <span class="tab-label">管理</span>
+    </a>
+  </nav>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal-content" class="modal-content"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+>>>>>>> 720259d371916804091c3da65933ac3ae765251a
