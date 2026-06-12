@@ -851,7 +851,7 @@ function renderMindMap() {
   document.getElementById('app').innerHTML = `
     <div class="mm-page">
       <div style="padding:14px 16px 4px;">
-        <h2 style="font-size:20px;font-weight:800;">🧠 脑图</h2>
+        <h2 style="font-size:20px;font-weight:800;">🕸️ 脑图</h2>
       </div>
       <div class="mm-part-bar" id="mm-part-bar">
         <div class="mm-part-chip active" data-pid="__all__" onclick="switchMMPart('__all__')">📋 全部</div>
@@ -944,7 +944,7 @@ function switchMMPart(partId) {
 }
 
 async function createMMPart() {
-  openModal(`<div class="modal-title">🧠 创建脑图Part</div>
+  openModal(`<div class="modal-title">🕸️ 创建脑图Part</div>
     <div class="form-group"><label class="form-label">Part名称（如：固体物理、机器学习...）</label>
     <input id="mm-part-name" class="input" placeholder="输入Part名称" maxlength="30"></div>
     <button class="btn btn-primary btn-block btn-lg" onclick="confirmCreateMMPart()">确认创建</button>
@@ -962,7 +962,7 @@ async function confirmCreateMMPart() {
       created_at: new Date().toISOString()
     });
     closeModal();
-    toast('Part创建成功！🧠', 'success');
+    toast('Part创建成功！🕸️', 'success');
     if (result && result[0]) MMS.currentPartId = result[0].id;
     await loadMMData();
   } catch (e) {
@@ -1014,30 +1014,60 @@ async function addMMNode() {
   }
 }
 
+// Full-screen content view on node click
 function onMMNodeClick(nodeId) {
+  const node = MMS.allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const part = MMS.parts.find(p => p.id === node.part_id);
+  const convertedContent = latexToUnicode(node.content || '');
+
+  openModal(`
+    <div class="modal-title" style="position:relative;">
+      节点内容
+      <button class="btn" onclick="closeModal()" style="position:absolute;right:0;top:-8px;font-size:20px;padding:0 4px;">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+      Part: ${esc(part?.name || '未知')} · ${fmtDate(node.created_at)}
+    </div>
+    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:16px;font-size:15px;line-height:1.9;max-height:55vh;overflow-y:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit;">
+      ${esc(convertedContent)}
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="editMMNodeContent('${node.id}')">✏️ 编辑</button>
+      <button class="btn btn-outline" style="flex:1;color:var(--danger);" onclick="deleteMMNode('${node.id}')">🗑️ 删除</button>
+    </div>
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">关闭</button>`);
+}
+
+// Edit node (opens from full-screen view)
+function editMMNodeContent(nodeId) {
   const node = MMS.allNodes.find(n => n.id === nodeId);
   if (!node) return;
   const part = MMS.parts.find(p => p.id === node.part_id);
   const otherNodes = MMS.allNodes.filter(n => n.id !== nodeId && n.part_id === node.part_id);
 
-  openModal(`<div class="modal-title">📝 节点详情</div>
+  openModal(`
+    <div class="modal-title">✏️ 编辑节点</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
       Part: ${esc(part?.name || '未知')} · ${fmtDate(node.created_at)}
     </div>
     <div class="form-group">
-      <label class="form-label">内容</label>
-      <textarea id="mm-edit-content" class="input" rows="4">${esc(node.content)}</textarea>
+      <label class="form-label">内容（支持 $...$ 行内和 $$...$$ 块级 LaTeX 公式）</label>
+      <textarea id="mm-edit-content" class="input" rows="5" style="font-family:monospace;">${esc(node.content)}</textarea>
     </div>
     <div class="form-group">
-      <label class="form-label">父节点（可选，用于构建层级）</label>
+      <label class="form-label">父节点（可选）</label>
       <select id="mm-edit-parent" class="input">
         <option value="">无父节点（顶层）</option>
         ${otherNodes.map(n => `<option value="${n.id}" ${n.id === node.parent_id ? 'selected' : ''}>${esc((n.content || '').slice(0, 25))}${n.content.length>25?'...':''}</option>`).join('')}
       </select>
     </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.6;">
+      💡 LaTeX: <code>$E=mc^2$</code> <code>$$\\int_0^\\infty$$</code> <code>$\\alpha+\\beta$</code> <code>$\\frac{a}{b}$</code> <code>$x^{2}$</code> <code>$H_2O$</code>
+    </div>
     <button class="btn btn-primary btn-block" onclick="saveMMNode('${node.id}')">💾 保存</button>
-    <button class="btn btn-outline btn-block mt-16" style="color:var(--danger);" onclick="deleteMMNode('${node.id}')">🗑️ 删除此节点</button>
-    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">关闭</button>`);
+    <button class="btn btn-outline btn-block mt-16" onclick="onMMNodeClick('${node.id}')">👁️ 返回查看</button>
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">取消</button>`);
 }
 
 async function saveMMNode(nodeId) {
@@ -1054,6 +1084,8 @@ async function saveMMNode(nodeId) {
     closeModal();
     toast('已保存！', 'success');
     await loadMMData();
+    // Re-open full content view with updated data
+    setTimeout(() => onMMNodeClick(nodeId), 300);
   } catch (e) {
     toast('保存失败: ' + (e.message || '未知错误'), 'error');
   }
@@ -1102,7 +1134,7 @@ function renderMMCanvas() {
 
   // Empty states
   if (MMS.parts.length === 0) {
-    wrap.innerHTML = `<div class="mm-empty-state"><div class="mm-empty-icon">🧠</div><div class="mm-empty-text">还没有脑图Part<br><small>点击上方 + 按钮创建第一个Part</small></div></div>`;
+    wrap.innerHTML = `<div class="mm-empty-state"><div class="mm-empty-icon">🕸️</div><div class="mm-empty-text">还没有脑图Part<br><small>点击上方 + 按钮创建第一个Part</small></div></div>`;
     return;
   }
   if (MMS.nodes.length === 0 && MMS.currentPartId !== '__all__') {
@@ -1188,8 +1220,9 @@ function renderMMCanvas() {
 
     const partIdx = MMS.parts.findIndex(p => p.id === n.part_id);
     const color = getPartColor(Math.max(partIdx, 0));
-    const text = n.content || '';
-    const truncated = text.length > MMS.truncateLen ? text.slice(0, MMS.truncateLen) + '...' : text;
+    const rawText = n.content || '';
+    const convertedText = latexToUnicode(rawText);
+    const truncated = convertedText.length > MMS.truncateLen ? convertedText.slice(0, MMS.truncateLen) + '...' : convertedText;
     const lines = wrapTextMM(truncated, 14);
     const lineH = 15, nodeW = 150;
     const nodeH = Math.max(34, lines.length * lineH + 18);
@@ -1436,6 +1469,88 @@ function extractKeywordsMM(text) {
     }
   }
   return [...result];
+}
+
+// ===== LaTeX to Unicode Converter =====
+function latexToUnicode(text) {
+  let result = text;
+
+  // Remove $ delimiters
+  result = result.replace(/\$\$(.+?)\$\$/g, '$1');
+  result = result.replace(/\$(.+?)\$/g, '$1');
+
+  // Greek letters (lowercase)
+  const greek = {
+    '\\alpha':'α','\\beta':'β','\\gamma':'γ','\\delta':'δ','\\epsilon':'ε',
+    '\\zeta':'ζ','\\eta':'η','\\theta':'θ','\\iota':'ι','\\kappa':'κ',
+    '\\lambda':'λ','\\mu':'μ','\\nu':'ν','\\xi':'ξ','\\pi':'π',
+    '\\rho':'ρ','\\sigma':'σ','\\tau':'τ','\\upsilon':'υ','\\phi':'φ',
+    '\\chi':'χ','\\psi':'ψ','\\omega':'ω',
+    '\\varepsilon':'ε','\\varphi':'ϕ','\\vartheta':'ϑ','\\varrho':'ϱ',
+  };
+  const greekUpper = {
+    '\\Gamma':'Γ','\\Delta':'Δ','\\Theta':'Θ','\\Lambda':'Λ','\\Xi':'Ξ',
+    '\\Pi':'Π','\\Sigma':'Σ','\\Upsilon':'Υ','\\Phi':'Φ','\\Psi':'Ψ','\\Omega':'Ω',
+  };
+  const allGreek = {...greek, ...greekUpper};
+  for (const [cmd, uni] of Object.entries(allGreek)) {
+    result = result.replace(new RegExp(cmd.replace(/\\/g,'\\\\'), 'g'), uni);
+  }
+
+  // Math symbols
+  const symbols = {
+    '\\infty':'∞','\\pm':'±','\\mp':'∓','\\cdot':'·','\\times':'×','\\div':'÷',
+    '\\leq':'≤','\\geq':'≥','\\neq':'≠','\\approx':'≈','\\equiv':'≡',
+    '\\sim':'∼','\\propto':'∝','\\rightarrow':'→','\\leftarrow':'←',
+    '\\Rightarrow':'⇒','\\Leftarrow':'⇐','\\leftrightarrow':'↔','\\mapsto':'↦',
+    '\\int':'∫','\\iint':'∬','\\oint':'∮','\\sum':'∑','\\prod':'∏',
+    '\\sqrt':'√','\\partial':'∂','\\nabla':'∇','\\forall':'∀','\\exists':'∃',
+    '\\in':'∈','\\notin':'∉','\\subset':'⊂','\\subseteq':'⊆','\\supset':'⊃',
+    '\\cup':'∪','\\cap':'∩','\\angle':'∠','\\parallel':'∥','\\perp':'⊥',
+    '\\circ':'∘','\\bullet':'•','\\oplus':'⊕','\\otimes':'⊗','\\ldots':'…',
+    '\\cdots':'⋯','\\vdots':'⋮','\\ddots':'⋱','\\therefore':'∴','\\because':'∵',
+    '\\langle':'⟨','\\rangle':'⟩','\\lceil':'⌈','\\rceil':'⌉',
+    '\\hbar':'ℏ','\\ell':'ℓ','\\Re':'ℜ','\\Im':'ℑ','\\emptyset':'∅',
+    '\\to':'→','\\gets':'←','\\implies':'⟹','\\iff':'⇔',
+  };
+  for (const [cmd, uni] of Object.entries(symbols)) {
+    result = result.replace(new RegExp(cmd.replace(/\\/g,'\\\\'), 'g'), uni);
+  }
+
+  // Superscripts: x^{abc} → xᵃᵇᶜ, x^a → xᵃ
+  const superMap = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹',
+    'a':'ᵃ','b':'ᵇ','c':'ᶜ','d':'ᵈ','e':'ᵉ','f':'ᶠ','g':'ᵍ','h':'ʰ','i':'ⁱ','j':'ʲ','k':'ᵏ','l':'ˡ',
+    'm':'ᵐ','n':'ⁿ','o':'ᵒ','p':'ᵖ','r':'ʳ','s':'ˢ','t':'ᵗ','u':'ᵘ','v':'ᵛ','w':'ʷ','x':'ˣ','y':'ʸ','z':'ᶻ',
+    '+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾','/':'ᐟ'};
+  result = result.replace(/\^\{([^}]+)\}/g, (_, p) => [...p].map(c => superMap[c] || c).join(''));
+  result = result.replace(/\^(\S)/g, (_, p) => superMap[p] || '^'+p);
+
+  // Subscripts: x_{abc} → xₐᵦ𝒸, x_a → xₐ
+  const subMap = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉',
+    'a':'ₐ','e':'ₑ','h':'ₕ','i':'ᵢ','j':'ⱼ','k':'ₖ','l':'ₗ','m':'ₘ','n':'ₙ','o':'ₒ','p':'ₚ',
+    'r':'ᵣ','s':'ₛ','t':'ₜ','u':'ᵤ','v':'ᵥ','x':'ₓ','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎'};
+  result = result.replace(/\_\{([^}]+)\}/g, (_, p) => [...p].map(c => subMap[c] || c).join(''));
+  result = result.replace(/\_(\S)/g, (_, p) => subMap[p] || '_'+p);
+
+  // Fractions: \frac{a}{b} → (a)/(b)
+  result = result.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
+
+  // \text{...} → just the text
+  result = result.replace(/\\text\{([^}]+)\}/g, '$1');
+  result = result.replace(/\\mathrm\{([^}]+)\}/g, '$1');
+  result = result.replace(/\\mathbf\{([^}]+)\}/g, '$1');
+
+  // \bar{x} → x̄, \hat{x} → x̂, \tilde{x} → x̃, \vec{x} → x⃗, \dot{x} → ẋ
+  result = result.replace(/\\bar\{([^}]+)\}/g, '$1̄');
+  result = result.replace(/\\hat\{([^}]+)\}/g, '$1̂');
+  result = result.replace(/\\tilde\{([^}]+)\}/g, '$1̃');
+  result = result.replace(/\\vec\{([^}]+)\}/g, '$1⃗');
+  result = result.replace(/\\dot\{([^}]+)\}/g, '$1̇');
+
+  // Clean up remaining backslash commands
+  result = result.replace(/\\[a-zA-Z]+/g, '');
+
+  return result;
 }
 
 // ===== SVG Text Wrapping =====
