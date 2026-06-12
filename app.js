@@ -191,7 +191,7 @@ function route(){
   if(!STATE.user&&hash!=='login'){window.location.hash='#login';return;}
   if(STATE.user&&hash==='login'){window.location.hash='#home';return;}
 
-  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='admin');
+  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='mindmap'&&hash!=='admin');
   document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden', !(STATE.user&&STATE.user.is_admin)));
 
   switch(hash){
@@ -199,6 +199,7 @@ function route(){
     case'home':renderHome();setTab('home');break;
     case'profile':renderProfile();setTab('profile');break;
     case'groups':renderGroups();setTab('groups');break;
+    case'mindmap':renderMindMap();setTab('mindmap');break;
     case'admin':renderAdmin();setTab('admin');break;
     default:window.location.hash='#home';
   }
@@ -817,6 +818,723 @@ async function deleteGroup(gid){
     toast(`删除失败: ${e.message || '未知错误'}${done}`,'error');
     if(deleted.length > 0) loadAdminData();
   }
+}
+
+/* ================================================================
+   Mind Map / Knowledge Network v1.0
+   ================================================================ */
+
+// ===== Mind Map State =====
+const MMS = {
+  parts: [],
+  nodes: [],
+  allNodes: [],
+  links: [],
+  currentPartId: '__all__',
+  viewMode: 'tree',
+  truncateLen: 30,
+  svgScale: 1,
+  svgPanX: 0,
+  svgPanY: 0,
+  layoutDirty: true,
+  nodePositions: {},
+};
+
+function getPartColor(idx) {
+  const colors = ['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+  return colors[idx % colors.length];
+}
+
+// ===== Mind Map Page Render =====
+function renderMindMap() {
+  const u = STATE.user;
+  document.getElementById('app').innerHTML = `
+    <div class="mm-page">
+      <div style="padding:14px 16px 4px;">
+        <h2 style="font-size:20px;font-weight:800;">🧠 脑图</h2>
+      </div>
+      <div class="mm-part-bar" id="mm-part-bar">
+        <div class="mm-part-chip active" data-pid="__all__" onclick="switchMMPart('__all__')">📋 全部</div>
+      </div>
+      <div class="mm-controls">
+        <div class="mm-toggle" id="mm-toggle">
+          <button class="mm-toggle-btn active" data-mode="tree" onclick="setMMView('tree')">🌳 脑图</button>
+          <button class="mm-toggle-btn" data-mode="network" onclick="setMMView('network')">🕸️ 知识网络</button>
+        </div>
+        <div class="mm-slider-wrap">
+          <span>省略</span>
+          <input type="range" id="mm-slider" min="10" max="80" value="${MMS.truncateLen}" oninput="onMMSlider(this.value)">
+          <span id="mm-slider-val">${MMS.truncateLen}字</span>
+        </div>
+      </div>
+      <div class="mm-canvas-wrap" id="mm-canvas-wrap">
+        <svg id="mm-svg"></svg>
+      </div>
+      <div class="mm-input-bar" id="mm-input-bar" style="${MMS.currentPartId==='__all__'?'display:none;':''}">
+        <input class="mm-input" id="mm-node-input" placeholder="输入学习内容，按回车添加..." maxlength="500">
+        <button class="btn btn-primary" onclick="addMMNode()">添加</button>
+      </div>
+    </div>`;
+
+  document.getElementById('mm-node-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') addMMNode();
+  });
+
+  loadMMData();
+}
+
+// ===== Data Loading =====
+async function loadMMData() {
+  try {
+    MMS.parts = await db().from('mindmap_parts').select().eq('user_id', STATE.user.id).order('created_at') || [];
+
+    if (MMS.parts.length > 0) {
+      const partIds = MMS.parts.map(p => p.id);
+      MMS.allNodes = await db().from('mindmap_nodes').select().eq('user_id', STATE.user.id).in('part_id', partIds).order('created_at') || [];
+    } else {
+      MMS.allNodes = [];
+    }
+
+    MMS.links = [];
+    if (MMS.allNodes.length > 0) {
+      const allLinks = await db().from('mindmap_links').select().eq('user_id', STATE.user.id) || [];
+      const nodeIdSet = new Set(MMS.allNodes.map(n => n.id));
+      MMS.links = allLinks.filter(l => nodeIdSet.has(l.from_node_id) && nodeIdSet.has(l.to_node_id));
+    }
+
+    updateMMPartBar();
+    filterMMNodes();
+    renderMMCanvas();
+  } catch (e) {
+    console.log('Load mind map failed:', e);
+    const wrap = document.getElementById('mm-canvas-wrap');
+    if (wrap) wrap.innerHTML = '<div class="mm-empty-state"><div class="mm-empty-icon">⚠️</div><div class="mm-empty-text">加载失败，请检查网络</div></div>';
+  }
+}
+
+function updateMMPartBar() {
+  const bar = document.getElementById('mm-part-bar');
+  if (!bar) return;
+  bar.innerHTML = `
+    <div class="mm-part-chip ${MMS.currentPartId === '__all__' ? 'active' : ''}" data-pid="__all__" onclick="switchMMPart('__all__')">📋 全部</div>
+    ${MMS.parts.map((p, i) => `
+      <div class="mm-part-chip ${MMS.currentPartId === p.id ? 'active' : ''}" data-pid="${p.id}" onclick="switchMMPart('${p.id}')" style="border-left:3px solid ${getPartColor(i)};">
+        ${esc(p.name)}
+        <span class="mm-part-chip-del" onclick="event.stopPropagation();deleteMMPart('${p.id}')" title="删除">✕</span>
+      </div>`).join('')}
+    <div class="mm-part-chip-add" onclick="createMMPart()" title="创建新Part">+</div>`;
+}
+
+function filterMMNodes() {
+  MMS.nodes = MMS.currentPartId === '__all__' ? [...MMS.allNodes] : MMS.allNodes.filter(n => n.part_id === MMS.currentPartId);
+  MMS.layoutDirty = true;
+}
+
+// ===== Part Management =====
+function switchMMPart(partId) {
+  MMS.currentPartId = partId;
+  MMS.svgScale = 1;
+  MMS.svgPanX = 0;
+  MMS.svgPanY = 0;
+  filterMMNodes();
+  updateMMPartBar();
+  const inputBar = document.getElementById('mm-input-bar');
+  if (inputBar) inputBar.style.display = (partId === '__all__') ? 'none' : 'flex';
+  renderMMCanvas();
+}
+
+async function createMMPart() {
+  openModal(`<div class="modal-title">🧠 创建脑图Part</div>
+    <div class="form-group"><label class="form-label">Part名称（如：固体物理、机器学习...）</label>
+    <input id="mm-part-name" class="input" placeholder="输入Part名称" maxlength="30"></div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="confirmCreateMMPart()">确认创建</button>
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">取消</button>`);
+  setTimeout(() => document.getElementById('mm-part-name')?.focus(), 300);
+}
+
+async function confirmCreateMMPart() {
+  const name = document.getElementById('mm-part-name').value.trim();
+  if (!name) return toast('请输入Part名称', 'error');
+  try {
+    const result = await db().from('mindmap_parts').insert({
+      user_id: STATE.user.id,
+      name: name,
+      created_at: new Date().toISOString()
+    });
+    closeModal();
+    toast('Part创建成功！🧠', 'success');
+    if (result && result[0]) MMS.currentPartId = result[0].id;
+    await loadMMData();
+  } catch (e) {
+    toast('创建失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+async function deleteMMPart(partId) {
+  const part = MMS.parts.find(p => p.id === partId);
+  if (!part) return;
+  if (!confirm(`确定删除「${part.name}」及其所有节点吗？此操作不可恢复。`)) return;
+  try {
+    const nodes = MMS.allNodes.filter(n => n.part_id === partId);
+    for (const n of nodes) {
+      await db().from('mindmap_links').eq('from_node_id', n.id).delete();
+      await db().from('mindmap_links').eq('to_node_id', n.id).delete();
+      await db().from('mindmap_nodes').eq('id', n.id).delete();
+    }
+    await db().from('mindmap_parts').eq('id', partId).delete();
+    if (MMS.currentPartId === partId) MMS.currentPartId = '__all__';
+    toast('Part已删除', 'success');
+    await loadMMData();
+  } catch (e) {
+    toast('删除失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+// ===== Node Management =====
+async function addMMNode() {
+  const input = document.getElementById('mm-node-input');
+  if (!input) return;
+  const content = input.value.trim();
+  if (!content) return toast('请输入内容', 'error');
+  const partId = MMS.currentPartId;
+  if (!partId || partId === '__all__') return toast('请先选择一个Part', 'error');
+  try {
+    await db().from('mindmap_nodes').insert({
+      part_id: partId,
+      user_id: STATE.user.id,
+      content: content,
+      parent_id: null,
+      created_at: new Date().toISOString()
+    });
+    input.value = '';
+    toast('已添加！✨', 'success');
+    await loadMMData();
+  } catch (e) {
+    toast('添加失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+function onMMNodeClick(nodeId) {
+  const node = MMS.allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const part = MMS.parts.find(p => p.id === node.part_id);
+  const otherNodes = MMS.allNodes.filter(n => n.id !== nodeId && n.part_id === node.part_id);
+
+  openModal(`<div class="modal-title">📝 节点详情</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      Part: ${esc(part?.name || '未知')} · ${fmtDate(node.created_at)}
+    </div>
+    <div class="form-group">
+      <label class="form-label">内容</label>
+      <textarea id="mm-edit-content" class="input" rows="4">${esc(node.content)}</textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">父节点（可选，用于构建层级）</label>
+      <select id="mm-edit-parent" class="input">
+        <option value="">无父节点（顶层）</option>
+        ${otherNodes.map(n => `<option value="${n.id}" ${n.id === node.parent_id ? 'selected' : ''}>${esc((n.content || '').slice(0, 25))}${n.content.length>25?'...':''}</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="saveMMNode('${node.id}')">💾 保存</button>
+    <button class="btn btn-outline btn-block mt-16" style="color:var(--danger);" onclick="deleteMMNode('${node.id}')">🗑️ 删除此节点</button>
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">关闭</button>`);
+}
+
+async function saveMMNode(nodeId) {
+  const content = document.getElementById('mm-edit-content').value.trim();
+  const parentId = document.getElementById('mm-edit-parent').value || null;
+  if (!content) return toast('内容不能为空', 'error');
+  // Prevent circular reference
+  if (parentId === nodeId) return toast('不能将自己设为父节点', 'error');
+  try {
+    await db().from('mindmap_nodes').eq('id', nodeId).eq('user_id', STATE.user.id).update({
+      content: content,
+      parent_id: parentId || null
+    });
+    closeModal();
+    toast('已保存！', 'success');
+    await loadMMData();
+  } catch (e) {
+    toast('保存失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+async function deleteMMNode(nodeId) {
+  if (!confirm('确定删除此节点吗？其子节点将变为顶层节点。')) return;
+  try {
+    // Unlink children
+    const children = MMS.allNodes.filter(n => n.parent_id === nodeId);
+    for (const child of children) {
+      await db().from('mindmap_nodes').eq('id', child.id).update({ parent_id: null });
+    }
+    await db().from('mindmap_links').eq('from_node_id', nodeId).delete();
+    await db().from('mindmap_links').eq('to_node_id', nodeId).delete();
+    await db().from('mindmap_nodes').eq('id', nodeId).delete();
+    closeModal();
+    toast('节点已删除', 'success');
+    await loadMMData();
+  } catch (e) {
+    toast('删除失败: ' + (e.message || '未知错误'), 'error');
+  }
+}
+
+// ===== View Mode & Slider =====
+function setMMView(mode) {
+  MMS.viewMode = mode;
+  MMS.layoutDirty = true;
+  document.querySelectorAll('#mm-toggle .mm-toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  renderMMCanvas();
+}
+
+function onMMSlider(val) {
+  MMS.truncateLen = parseInt(val);
+  const label = document.getElementById('mm-slider-val');
+  if (label) label.textContent = val + '字';
+  renderMMCanvas();
+}
+
+// ===== Canvas Rendering =====
+function renderMMCanvas() {
+  const wrap = document.getElementById('mm-canvas-wrap');
+  if (!wrap) return;
+
+  // Empty states
+  if (MMS.parts.length === 0) {
+    wrap.innerHTML = `<div class="mm-empty-state"><div class="mm-empty-icon">🧠</div><div class="mm-empty-text">还没有脑图Part<br><small>点击上方 + 按钮创建第一个Part</small></div></div>`;
+    return;
+  }
+  if (MMS.nodes.length === 0 && MMS.currentPartId !== '__all__') {
+    wrap.innerHTML = `<div class="mm-empty-state"><div class="mm-empty-icon">📝</div><div class="mm-empty-text">这个Part还没有内容<br><small>在下方输入框添加你的第一条学习笔记</small></div></div>`;
+    return;
+  }
+  if (MMS.currentPartId === '__all__' && MMS.nodes.length === 0) {
+    wrap.innerHTML = `<div class="mm-empty-state"><div class="mm-empty-icon">📋</div><div class="mm-empty-text">各Part中还没有内容<br><small>选择上方某个Part，开始添加学习笔记吧</small></div></div>`;
+    return;
+  }
+
+  // Restore SVG element if replaced by empty state
+  if (!wrap.querySelector('svg')) {
+    wrap.innerHTML = '<svg id="mm-svg"></svg>';
+  }
+  const svg = wrap.querySelector('svg');
+  const W = wrap.clientWidth || 400;
+  const H = wrap.clientHeight || 400;
+
+  // Calculate layout
+  let positions, edges, bounds, rootNode;
+  if (MMS.viewMode === 'tree') {
+    const result = calcTreeLayout(MMS.nodes, MMS.currentPartId, MMS.parts);
+    positions = result.positions;
+    edges = result.edges;
+    bounds = result.bounds;
+    rootNode = result.rootNode;
+  } else {
+    const result = calcNetworkLayout(MMS.nodes, MMS.links, MMS.allNodes, MMS.currentPartId, MMS.parts, W, H);
+    positions = result.positions;
+    edges = result.edges;
+    bounds = result.bounds;
+    rootNode = null;
+  }
+
+  MMS.nodePositions = positions;
+
+  // Cross-part auto connections (in "all" + network mode)
+  let crossEdges = [];
+  if (MMS.currentPartId === '__all__') {
+    crossEdges = detectCrossConnections(MMS.nodes, MMS.parts);
+  }
+
+  // ViewBox
+  const pad = 60;
+  const vbW = Math.max(bounds.maxX - bounds.minX + pad * 2, W);
+  const vbH = Math.max(bounds.maxY - bounds.minY + pad * 2, H);
+  const vbX = bounds.minX - pad;
+  const vbY = bounds.minY - pad;
+
+  // Build SVG content
+  let html = '';
+
+  // Regular edges
+  for (const e of edges) {
+    const fp = positions[e.from], tp = positions[e.to];
+    if (!fp || !tp) continue;
+    const mx = (fp.x + tp.x) / 2;
+    html += `<path d="M${fp.x},${fp.y} C${mx},${fp.y} ${mx},${tp.y} ${tp.x},${tp.y}" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round"/>`;
+  }
+
+  // Cross-part edges
+  for (const e of crossEdges) {
+    const fp = positions[e.from], tp = positions[e.to];
+    if (!fp || !tp) continue;
+    html += `<line x1="${fp.x}" y1="${fp.y}" x2="${tp.x}" y2="${tp.y}" stroke="var(--primary-light)" stroke-width="1" stroke-dasharray="6,3" opacity="0.6"/>`;
+  }
+
+  // Root node (part name in tree mode)
+  if (rootNode && positions['__root__']) {
+    const rp = positions['__root__'];
+    const rw = 170, rh = 42;
+    html += `<g class="mm-node-group" transform="translate(${rp.x - rw/2}, ${rp.y - rh/2})">
+      <rect x="0" y="0" width="${rw}" height="${rh}" rx="12" ry="12" fill="var(--primary-bg)" stroke="var(--primary)" stroke-width="2.5"/>
+      <text x="${rw/2}" y="${rh/2 + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="var(--primary)" font-family="inherit">📁 ${esc(rootNode.content)}</text>
+    </g>`;
+  }
+
+  // Content nodes
+  for (const n of MMS.nodes) {
+    const pos = positions[n.id];
+    if (!pos) continue;
+
+    const partIdx = MMS.parts.findIndex(p => p.id === n.part_id);
+    const color = getPartColor(Math.max(partIdx, 0));
+    const text = n.content || '';
+    const truncated = text.length > MMS.truncateLen ? text.slice(0, MMS.truncateLen) + '...' : text;
+    const lines = wrapTextMM(truncated, 14);
+    const lineH = 15, nodeW = 150;
+    const nodeH = Math.max(34, lines.length * lineH + 18);
+
+    html += `<g class="mm-node-group" transform="translate(${pos.x - nodeW/2}, ${pos.y - nodeH/2})" onclick="onMMNodeClick('${n.id}')">
+      <rect x="0" y="0" width="${nodeW}" height="${nodeH}" rx="8" ry="8" fill="var(--card)" stroke="${color}" stroke-width="2"/>
+      ${lines.map((l, li) => `<text x="${nodeW/2}" y="${13 + li * lineH}" text-anchor="middle" font-size="11" fill="var(--text)" font-family="inherit">${esc(l)}</text>`).join('')}
+    </g>`;
+  }
+
+  svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+  svg.innerHTML = html;
+
+  // Setup pan/zoom interaction
+  setupMMInteraction(wrap, svg);
+}
+
+// ===== Tree Layout Algorithm =====
+function calcTreeLayout(nodes, currentPartId, parts) {
+  const nodeW = 150, nodeH = 48, hGap = 28, vGap = 70;
+  const ROOT = '__root__';
+  const nodeMap = {};
+  for (const n of nodes) nodeMap[n.id] = n;
+
+  // Build children map
+  const children = {};
+  for (const n of nodes) {
+    const pid = n.parent_id || ROOT;
+    (children[pid] = children[pid] || []).push(n);
+  }
+
+  // Count leaves in subtree
+  function leafCount(nodeId) {
+    const kids = children[nodeId] || [];
+    if (kids.length === 0) return 1;
+    return kids.reduce((s, k) => s + leafCount(k.id), 0);
+  }
+
+  const positions = {};
+  const edges = [];
+
+  // Recursive placement
+  function place(nodeId, left, top, availWidth) {
+    const kids = children[nodeId] || [];
+    if (kids.length === 0) {
+      if (nodeId !== ROOT) positions[nodeId] = { x: left + availWidth / 2, y: top };
+      return;
+    }
+
+    const totalLeaves = kids.reduce((s, k) => s + leafCount(k.id), 0);
+    const totalW = totalLeaves * (nodeW + hGap) - hGap;
+    const startX = left + (availWidth - totalW) / 2;
+
+    let cx = startX;
+    for (const kid of kids) {
+      const kl = leafCount(kid.id);
+      const kw = kl * (nodeW + hGap) - hGap;
+      const kx = cx + kw / 2;
+      const ky = top + nodeH + vGap;
+      positions[kid.id] = { x: kx, y: ky };
+      if (nodeId !== ROOT) edges.push({ from: nodeId, to: kid.id });
+      place(kid.id, cx, ky, kw);
+      cx += kw + hGap;
+    }
+  }
+
+  const rootKids = children[ROOT] || [];
+  const totalLeaves = rootKids.reduce((s, k) => s + leafCount(k.id), 0);
+  const totalW = Math.max(totalLeaves * (nodeW + hGap) - hGap, 300);
+  const rootX = totalW / 2;
+  const rootY = 0;
+
+  // Root node
+  let rootNode = null;
+  if (currentPartId !== '__all__') {
+    const part = parts.find(p => p.id === currentPartId);
+    rootNode = { id: ROOT, content: part?.name || 'Unnamed' };
+    positions[ROOT] = { x: rootX, y: rootY };
+    for (const kid of rootKids) {
+      edges.push({ from: ROOT, to: kid.id });
+    }
+  }
+
+  place(ROOT, 0, rootY + nodeH + vGap, totalW);
+
+  // If no root, shift all nodes up
+  if (!rootNode) {
+    const allY = Object.values(positions).map(p => p.y);
+    const minY = allY.length > 0 ? Math.min(...allY) : 0;
+    for (const key of Object.keys(positions)) {
+      positions[key].y -= minY - 20;
+    }
+  }
+
+  // Calculate bounds
+  const allPos = Object.values(positions);
+  const xs = allPos.map(p => p.x), ys = allPos.map(p => p.y);
+
+  return {
+    positions,
+    edges,
+    rootNode,
+    bounds: {
+      minX: (xs.length > 0 ? Math.min(...xs) : 0) - nodeW,
+      minY: (ys.length > 0 ? Math.min(...ys) : 0) - nodeH,
+      maxX: (xs.length > 0 ? Math.max(...xs) : totalW) + nodeW,
+      maxY: (ys.length > 0 ? Math.max(...ys) : totalW) + nodeH + vGap,
+    }
+  };
+}
+
+// ===== Force-Directed Network Layout =====
+function calcNetworkLayout(nodes, links, allNodes, currentPartId, parts, canvasW, canvasH) {
+  const nodeW = 150, nodeH = 48;
+  const cx = 400, cy = 300;
+
+  // Init positions in a circle
+  const positions = {};
+  nodes.forEach((n, i) => {
+    const angle = (2 * Math.PI * i) / nodes.length + 0.08;
+    const r = Math.min(canvasW, canvasH, 500) * 0.3;
+    // Deterministic jitter based on content hash
+    const jx = ((n.content || '').length * 7) % 40 - 20;
+    const jy = ((n.content || '').length * 13) % 40 - 20;
+    positions[n.id] = {
+      x: cx + Math.cos(angle) * r + jx,
+      y: cy + Math.sin(angle) * r + jy,
+    };
+  });
+
+  // Build edges: parent-child + explicit links
+  const edgeList = [];
+  const seenE = new Set();
+  for (const n of nodes) {
+    if (n.parent_id && positions[n.parent_id]) {
+      const k = n.parent_id + '->' + n.id;
+      if (!seenE.has(k)) { seenE.add(k); edgeList.push({ from: n.parent_id, to: n.id }); }
+    }
+  }
+  for (const l of links) {
+    if (positions[l.from_node_id] && positions[l.to_node_id]) {
+      const k = l.from_node_id + '->' + l.to_node_id;
+      if (!seenE.has(k)) { seenE.add(k); edgeList.push({ from: l.from_node_id, to: l.to_node_id }); }
+    }
+  }
+
+  // Force simulation
+  const ids = nodes.map(n => n.id);
+  for (let iter = 0; iter < 50; iter++) {
+    // Repulsion
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i], b = ids[j];
+        const dx = positions[a].x - positions[b].x;
+        const dy = positions[a].y - positions[b].y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const f = 5000 / (d * d);
+        positions[a].x += (dx / d) * f;
+        positions[a].y += (dy / d) * f;
+        positions[b].x -= (dx / d) * f;
+        positions[b].y -= (dy / d) * f;
+      }
+    }
+    // Attraction
+    for (const e of edgeList) {
+      const a = e.from, b = e.to;
+      if (!positions[a] || !positions[b]) continue;
+      const dx = positions[b].x - positions[a].x;
+      const dy = positions[b].y - positions[a].y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = d * 0.025;
+      positions[a].x += (dx / d) * f;
+      positions[a].y += (dy / d) * f;
+      positions[b].x -= (dx / d) * f;
+      positions[b].y -= (dy / d) * f;
+    }
+    // Center gravity
+    for (const id of ids) {
+      positions[id].x += (cx - positions[id].x) * 0.015;
+      positions[id].y += (cy - positions[id].y) * 0.015;
+    }
+    // Clamp
+    for (const id of ids) {
+      positions[id].x = Math.max(60, Math.min(cx * 2 - 60, positions[id].x));
+      positions[id].y = Math.max(30, Math.min(cy * 2 - 30, positions[id].y));
+    }
+  }
+
+  const allPos = Object.values(positions);
+  const xs = allPos.map(p => p.x), ys = allPos.map(p => p.y);
+
+  return {
+    positions,
+    edges: edgeList,
+    bounds: {
+      minX: Math.min(...xs, 0) - nodeW,
+      minY: Math.min(...ys, 0) - nodeH,
+      maxX: Math.max(...xs, cx * 2) + nodeW,
+      maxY: Math.max(...ys, cy * 2) + nodeH,
+    }
+  };
+}
+
+// ===== Auto Cross-Part Connection Detection =====
+function detectCrossConnections(nodes, parts) {
+  if (nodes.length < 2) return [];
+
+  // Extract keywords per node
+  const nodeKW = {};
+  for (const n of nodes) {
+    nodeKW[n.id] = extractKeywordsMM(n.content || '');
+  }
+
+  const crossEdges = [];
+  const seen = new Set();
+
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      if (a.part_id === b.part_id) continue; // same part, skip
+      const common = nodeKW[a.id].filter(kw => kw.length >= 2 && nodeKW[b.id].includes(kw));
+      if (common.length >= 2) {
+        const key = [a.id, b.id].sort().join('--');
+        if (!seen.has(key)) {
+          seen.add(key);
+          crossEdges.push({ from: a.id, to: b.id, keywords: common });
+        }
+      }
+    }
+  }
+
+  return crossEdges;
+}
+
+function extractKeywordsMM(text) {
+  const result = new Set();
+  // Split by delimiters
+  const words = text.split(/[,，。、.、\s\n【】《》\(\)（）：:;；!！?？+=-]+/).filter(w => w.length >= 2);
+  words.forEach(w => result.add(w));
+  // Chinese bigrams
+  for (let i = 0; i < text.length - 1; i++) {
+    if (/[一-鿿]/.test(text[i]) && /[一-鿿]/.test(text[i + 1])) {
+      result.add(text[i] + text[i + 1]);
+    }
+  }
+  return [...result];
+}
+
+// ===== SVG Text Wrapping =====
+function wrapTextMM(text, charsPerLine) {
+  const lines = [];
+  let cur = '';
+  for (let i = 0; i < text.length; i++) {
+    cur += text[i];
+    if (cur.length >= charsPerLine) { lines.push(cur); cur = ''; }
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 4);
+}
+
+// ===== Pan & Zoom Interaction =====
+function setupMMInteraction(wrap, svg) {
+  // Remove old listeners by cloning
+  const newWrap = wrap.cloneNode(true);
+  wrap.parentNode.replaceChild(newWrap, wrap);
+  // Re-acquire svg reference since it was cloned
+  const newSvg = newWrap.querySelector('svg');
+
+  let isPanning = false;
+  let startX = 0, startY = 0;
+  let startPanX = 0, startPanY = 0;
+
+  newWrap.addEventListener('mousedown', e => {
+    if (e.target.closest('.mm-node-group')) return;
+    isPanning = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startPanX = MMS.svgPanX;
+    startPanY = MMS.svgPanY;
+    newWrap.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!isPanning) return;
+    MMS.svgPanX = startPanX + (e.clientX - startX);
+    MMS.svgPanY = startPanY + (e.clientY - startY);
+    const g = (document.getElementById('mm-svg') || newSvg)?.querySelector('g, svg');
+    // Use viewBox shift by adjusting the SVG's viewBox
+    updateMMPanZoom();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      const w = document.getElementById('mm-canvas-wrap');
+      if (w) w.style.cursor = 'grab';
+    }
+  });
+
+  newWrap.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    MMS.svgScale = Math.max(0.3, Math.min(3, MMS.svgScale * delta));
+    updateMMPanZoom();
+  }, { passive: false });
+
+  // Touch support
+  newWrap.addEventListener('touchstart', e => {
+    if (e.touches.length === 1 && !e.target.closest('.mm-node-group')) {
+      isPanning = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      startPanX = MMS.svgPanX;
+      startPanY = MMS.svgPanY;
+    }
+  }, { passive: false });
+
+  newWrap.addEventListener('touchmove', e => {
+    if (!isPanning || e.touches.length !== 1) return;
+    MMS.svgPanX = startPanX + (e.touches[0].clientX - startX);
+    MMS.svgPanY = startPanY + (e.touches[0].clientY - startY);
+    updateMMPanZoom();
+    e.preventDefault();
+  }, { passive: false });
+
+  newWrap.addEventListener('touchend', () => { isPanning = false; });
+}
+
+function updateMMPanZoom() {
+  const svg = document.getElementById('mm-svg');
+  if (!svg) return;
+  // Apply pan/zoom by adjusting viewBox
+  const vb = svg.getAttribute('viewBox');
+  if (!vb) return;
+  const parts = vb.split(' ').map(Number);
+  if (parts.length < 4) return;
+
+  const scale = MMS.svgScale;
+  const w = parts[2] / scale;
+  const h = parts[3] / scale;
+  const x = parts[0] - MMS.svgPanX / scale;
+  const y = parts[1] - MMS.svgPanY / scale;
+
+  svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
 }
 
 // ===== 启动！=====
