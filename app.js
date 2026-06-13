@@ -396,13 +396,22 @@ function updatePunchUI(){
     cancelEl.classList.remove('hidden');hintEl.textContent='';
     stopTimer();
     const st=new Date(a.start_time);
-    const tick=()=>{timerEl.textContent=fmtTimer(Math.floor((new Date()-st)/1000));};
+    const MAX_SEC = 12 * 3600;
+    const tick=()=>{
+      const elapsed = Math.floor((new Date()-st)/1000);
+      if(elapsed >= MAX_SEC){
+        timerEl.textContent = fmtTimer(MAX_SEC);
+        autoEndSession();
+        return;
+      }
+      timerEl.textContent=fmtTimer(elapsed);
+    };
     tick();STATE.timerInterval=setInterval(tick,1000);
   }else{
     btn.textContent='📖 开始学习';btn.className='btn btn-success btn-xl btn-block';
     timerEl.classList.add('hidden');ctEl.classList.add('hidden');
     cancelEl.classList.add('hidden');
-    hintEl.textContent='点击开始，记录你的学习时光';
+    hintEl.textContent='点击开始，记录你的学习时光 · 单次上限12小时';
   }
 }
 
@@ -463,6 +472,25 @@ async function cancelPunch(){
   }catch(e){toast('操作失败','error');}
 }
 
+async function autoEndSession(){
+  // 12 小时封顶：自动结束超时学习任务
+  const a = STATE.activeSession;
+  if(!a) return;
+  const st = new Date(a.start_time);
+  const endTime = new Date(st.getTime() + 12 * 3600 * 1000);
+  const dur = 12 * 3600;
+  try{
+    await db().from('sessions').eq('id', a.id).update({
+      end_time: endTime.toISOString(),
+      content: (a.content||'') + ' [已到达12小时上限，自动结束]',
+      duration_sec: dur
+    });
+    STATE.activeSession = null;
+    stopTimer(); updatePunchUI(); loadMembers();
+    toast('⏰ 已达12小时学习上限，自动结束', 'success');
+  }catch(e){ console.log('自动结束失败', e); }
+}
+
 // 群组 & 成员
 async function loadGroupsAndMembers(){
   const sel=document.getElementById('group-selector');
@@ -514,8 +542,10 @@ async function loadMembers(){
       return {...m,is_online:!!active,online_since:active?.start_time,total_sec:total,session_count:(stats||[]).length};
     }));
     const isAllMembers = STATE.currentGroup === '__all__';
+    const isAdmin = STATE.user && STATE.user.is_admin;
+    const canClick = !isAllMembers || isAdmin;
     grid.innerHTML=enriched.map(m=>`
-      <div class="member-item" ${isAllMembers?'':`onclick="showMemberDetail('${esc(m.id)}')"`} style="${isAllMembers?'cursor:default;':''}">
+      <div class="member-item" ${canClick?`onclick="showMemberDetail('${esc(m.id)}')"`:''} style="${canClick?'':'cursor:default;'}">
         <div class="avatar-wrapper">
           <div class="avatar avatar-sm" style="background:${hsl2hex(m.color)}">${getIni(m.name)}</div>
           <span class="status-dot ${m.is_online?'online':'offline'}"></span>
