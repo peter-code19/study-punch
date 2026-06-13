@@ -135,7 +135,7 @@ function setTab(t){
 // ===== 轮询/计时器 =====
 function startPoll(){
   stopPoll();
-  STATE.pollTimer=setInterval(()=>{updateWinBanner();loadMembers();},30000);
+  STATE.pollTimer=setInterval(()=>{updateWinBanner();loadMembers();syncActiveSession();},30000);
 }
 function stopPoll(){if(STATE.pollTimer){clearInterval(STATE.pollTimer);STATE.pollTimer=null;}}
 function stopTimer(){if(STATE.timerInterval){clearInterval(STATE.timerInterval);STATE.timerInterval=null;}}
@@ -276,11 +276,55 @@ async function doLogin(){
     }
     localStorage.setItem('study_user_id',user.id);
     STATE.user=user;
+    // 跨设备同步：检测是否有进行中的学习
+    const active=await db().from('sessions').select().eq('user_id',user.id).is('end_time',null).order('start_time','desc').single();
+    STATE.activeSession=active||null;
     window.location.hash='#home';
   }catch(e){
     toast('连接失败: ' + (e.message || '网络错误'), 'error');
     btn.disabled=false;btn.textContent='进入打卡';
   }
+}
+
+// ===== 跨设备活跃 Session 同步 =====
+async function syncActiveSession(){
+  if(!STATE.user)return;
+  try{
+    const uid=STATE.user.id;
+    // 查询当前用户所有活跃 session（end_time 为 null）
+    const activeSessions=await db().from('sessions').select().eq('user_id',uid).is('end_time',null).order('start_time','desc');
+    const activeList=activeSessions||[];
+
+    if(activeList.length>0){
+      // 有活跃 session：取最新的一个
+      const latest=activeList[0];
+      const changed=!STATE.activeSession||STATE.activeSession.id!==latest.id;
+      STATE.activeSession=latest;
+      if(changed)updatePunchUI();
+
+      // 清理旧的"僵尸"session（超过 1 个活跃 session 时，关闭旧的）
+      if(activeList.length>1){
+        for(let i=1;i<activeList.length;i++){
+          const old=activeList[i];
+          const st=new Date(old.start_time);
+          const now=new Date();
+          const dur=Math.floor((now-st)/1000);
+          await db().from('sessions').eq('id',old.id).update({
+            end_time:now.toISOString(),
+            duration_sec:dur,
+            content:(old.content||'')+' [自动结束：检测到新的学习任务]'
+          });
+        }
+      }
+    }else{
+      // 没有活跃 session：清理本地状态
+      if(STATE.activeSession){
+        STATE.activeSession=null;
+        stopTimer();
+        updatePunchUI();
+      }
+    }
+  }catch(e){console.log('同步活跃session失败',e);}
 }
 
 // ====== 首页 ======
@@ -315,6 +359,7 @@ function renderHome(){
   loadGroupsAndMembers();
   startClock();
   startPoll();
+  syncActiveSession();
 }
 
 function startClock(){
