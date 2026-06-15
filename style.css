@@ -430,3 +430,226 @@ textarea.input { resize: vertical; min-height: 80px; font-family: inherit; }
 .mm-empty-icon { font-size: 48px; margin-bottom: 12px; }
 .mm-empty-text { font-size: 14px; line-height: 1.8; margin-bottom: 16px; }
 .mm-empty-text small { font-size: 12px; opacity: 0.7; }
+
+/* ===== 日程/DDL 页面 ===== */
+.cal-page {
+  padding-bottom: calc(var(--tab-height) + 24px);
+}
+
+/* 顶部即将到来日程面板 */
+.cal-upcoming-section {
+  padding: 0 16px; margin-bottom: 16px;
+}
+
+.cal-filter-tabs {
+  display: flex; gap: 6px; margin-bottom: 12px;
+}
+.cal-filter-tab {
+  padding: 6px 14px; border-radius: 50px;
+  border: 1.5px solid var(--border);
+  background: var(--card); font-size: 12px;
+  cursor: pointer; transition: all 0.15s;
+  color: var(--text-secondary); white-space: nowrap;
+}
+.cal-filter-tab.active {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+
+.cal-upcoming-card {
+  background: var(--card); border-radius: var(--radius-sm);
+  padding: 14px 16px; margin-bottom: 8px;
+  box-shadow: var(--shadow); border-left: 4px solid var(--primary);
+  cursor: pointer; transition: all 0.15s;
+}
+.cal-upcoming-card:active { transform: scale(0.98); }
+.cal-upcoming-card-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 6px;
+}
+.cal-upcoming-card-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  flex: 1; padding-right: 8px;
+}
+.cal-upcoming-card-date {
+  font-size: 12px; color: var(--text-secondary);
+  margin-bottom: 4px; display: flex; align-items: center; gap: 4px;
+}
+.cal-countdown {
+  font-size: 13px; font-weight: 600; color: var(--primary);
+  display: flex; align-items: center; gap: 4px;
+}
+.cal-countdown.urgent { color: var(--danger); }
+.cal-countdown.near { color: var(--warning); }
+.cal-upcoming-card-desc {
+  font-size: 12px; color: var(--text-muted); margin-top: 4px;
+}
+
+.cal-expand-btn {
+  text-align: center; padding: 12px;
+  font-size: 13px; color: var(--primary); cursor: pointer;
+  border-radius: var(--radius-sm); transition: background 0.15s;
+  font-weight: 600;
+}
+.cal-expand-btn:hover { background: var(--primary-bg); }
+
+.cal-no-upcoming {
+  text-align: center; padding: 24px 16px; color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* 日历区域 */
+.cal-calendar-section {
+  padding: 0 16px; margin-bottom: 16px;
+}
+.cal-month-wrap {
+  background: var(--card); border-radius: var(--radius);
+  padding: 12px; margin-bottom: 12px; box-shadow: var(--shadow);
+}
+.cal-month-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px; padding: 0 4px;
+}
+.cal-month-title {
+  font-size: 16px; font-weight: 700; color: var(--text);
+}
+.cal-month-nav {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid var(--border); background: var(--card);
+  font-size: 14px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.cal-month-nav:hover { background: var(--primary-bg); }
+.cal-month-nav:active { transform: scale(0.9); }
+
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 2px; text-align: center;
+}
+.cal-weekday {
+  font-size: 11px; color: var(--text-muted);
+  padding: 6px 0; font-weight: 600;
+}
+.cal-day {
+  aspect-ratio: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: all 0.15s; font-size: 13px; color: var(--text);
+  position: relative; min-width: 0;
+}
+.cal-day:hover { background: var(--primary-bg); }
+.cal-day.other-month { color: var(--text-muted); opacity: 0.4; }
+.cal-day.today {
+  background: var(--primary-bg); font-weight: 800;
+  color: var(--primary); box-shadow: inset 0 0 0 2px var(--primary);
+}
+.cal-day.has-events { font-weight: 600; }
+.cal-day-dots {
+  display: flex; gap: 2px; margin-top: 2px; justify-content: center;
+}
+.cal-day-dot {
+  width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+}
+.cal-day-more {
+  font-size: 8px; color: var(--text-muted); margin-top: 1px;
+}
+
+/* 日期详情弹窗 */
+.cal-date-detail-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.cal-date-detail-title {
+  font-size: 15px; font-weight: 700;
+}
+.cal-date-event-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 6px;
+  border-radius: var(--radius-sm); background: var(--bg);
+  cursor: pointer; transition: all 0.15s;
+}
+.cal-date-event-item:active { transform: scale(0.98); }
+.cal-date-event-color {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.cal-date-event-info { flex: 1; min-width: 0; }
+.cal-date-event-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.cal-date-event-time {
+  font-size: 11px; color: var(--text-muted);
+}
+.cal-date-event-desc {
+  font-size: 11px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 过期日程区域 */
+.cal-expired-section {
+  padding: 0 16px; margin-bottom: 20px;
+}
+.cal-expired-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: var(--card);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  cursor: pointer; font-size: 14px; font-weight: 600;
+  color: var(--text-secondary);
+}
+.cal-expired-badge {
+  font-size: 11px; background: var(--text-muted); color: white;
+  padding: 2px 8px; border-radius: 50px;
+}
+.cal-expired-list {
+  margin-top: 8px;
+}
+.cal-expired-item {
+  background: var(--card); border-radius: var(--radius-sm);
+  padding: 12px 16px; margin-bottom: 6px;
+  box-shadow: var(--shadow); border-left: 3px solid var(--text-muted);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px;
+}
+.cal-expired-item-info { flex: 1; min-width: 0; }
+.cal-expired-item-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.cal-expired-item-date {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+}
+.cal-expired-item-actions {
+  display: flex; gap: 6px;
+}
+.cal-expired-item-actions .btn {
+  padding: 5px 12px; font-size: 12px; min-height: auto; border-radius: 50px;
+}
+
+/* 颜色选择器 */
+.cal-color-picker {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.cal-color-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  cursor: pointer; transition: all 0.15s;
+  border: 3px solid transparent;
+}
+.cal-color-dot.selected { border-color: var(--text); transform: scale(1.15); }
+.cal-color-dot:active { transform: scale(0.9); }
+
+/* 添加按钮 */
+.cal-add-btn-wrap {
+  padding: 0 16px 30px; text-align: center;
+}
+
+/* 深色模式适配 */
+[data-theme="dark"] .cal-upcoming-card {
+  border-left-color: var(--primary-light);
+}
+[data-theme="dark"] .cal-day:hover {
+  background: var(--primary-bg);
+}
+[data-theme="dark"] .cal-date-event-item {
+  background: var(--bg);
+}
+[data-theme="dark"] .cal-expired-item {
+  border-left-color: var(--text-muted);
+}

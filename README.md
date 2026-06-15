@@ -7,7 +7,7 @@
 - **📖 学习计时** — 一键开始/结束学习，自动记录学习内容和时长
 - **👥 群组协作** — 创建或加入群组，与朋友互相监督学习进度
 - **📊 数据统计** — 日/周/月/全部学习时长与次数统计，支持历史记录回溯
-- **🕸️ 知识脑图** — 树形布局和力导向网络两种视图，支持跨 Part 自动关联
+- **📅 日程管理** — 双月日历视图，日程添加与倒计时提醒，支持 7/14/30 天筛选，过期日程处理
 - **🔐 账号系统** — SHA-256 密码哈希，安全登录注册
 - **🌙 深色模式** — 一键切换，localStorage 持久化
 - **📱 PWA 支持** — 可添加到主屏幕，接近原生应用体验
@@ -61,6 +61,20 @@ CREATE TABLE group_members (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   group_id TEXT REFERENCES groups_table(id) ON DELETE CASCADE,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 日程表
+CREATE TABLE calendar_events (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  event_date DATE NOT NULL,
+  event_time TIME,
+  end_date DATE,
+  color TEXT DEFAULT '#4f46e5',
+  is_all_day BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 脑图 Part 表

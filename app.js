@@ -71,6 +71,17 @@ const STATE = {
   clockTimer: null,
 };
 
+// ===== 日程状态 =====
+const CAL = {
+  currentMonth: new Date().getMonth(),
+  currentYear: new Date().getFullYear(),
+  events: [],
+  upcomingFilter: '7',
+  showAllUpcoming: false,
+  showExpired: false,
+  countdownTimer: null,
+};
+
 // ===== 工具函数 =====
 const esc = s => { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; };
 const pd = n => String(n).padStart(2,'0');
@@ -186,12 +197,12 @@ async function init(){
 
 // ===== 路由 =====
 function route(){
-  stopPoll();stopTimer();stopClock();
+  stopPoll();stopTimer();stopClock();stopCalTimer();
   const hash=window.location.hash.slice(1)||'login';
   if(!STATE.user&&hash!=='login'){window.location.hash='#login';return;}
   if(STATE.user&&hash==='login'){window.location.hash='#home';return;}
 
-  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='mindmap'&&hash!=='admin');
+  document.getElementById('tabbar').classList.toggle('hidden',hash!=='home'&&hash!=='profile'&&hash!=='groups'&&hash!=='mindmap'&&hash!=='calendar'&&hash!=='admin');
   document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden', !(STATE.user&&STATE.user.is_admin)));
 
   switch(hash){
@@ -200,6 +211,7 @@ function route(){
     case'profile':renderProfile();setTab('profile');break;
     case'groups':renderGroups();setTab('groups');break;
     case'mindmap':renderMindMap();setTab('mindmap');break;
+    case'calendar':renderCalendar();setTab('calendar');break;
     case'admin':renderAdmin();setTab('admin');break;
     default:window.location.hash='#home';
   }
@@ -1725,6 +1737,352 @@ function updateMMPanZoom() {
   const y = parts[1] - MMS.svgPanY / scale;
 
   svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+}
+
+// ================================================================
+//   Calendar / DDL v1.0
+// ================================================================
+
+function stopCalTimer(){if(CAL.countdownTimer){clearInterval(CAL.countdownTimer);CAL.countdownTimer=null;}}
+
+function calcCountdown(ev){
+  const now=new Date();
+  const timeStr=ev.event_time||'23:59:59';
+  const target=new Date(ev.event_date+'T'+timeStr);
+  const diff=target-now;
+  if(diff<=0)return{expired:true,text:'已过期',cls:''};
+  const days=Math.floor(diff/86400000);
+  const hours=Math.floor((diff%86400000)/3600000);
+  const mins=Math.floor((diff%3600000)/60000);
+  let cls='';
+  if(days===0&&hours<24)cls='urgent';
+  else if(days<=2)cls='near';
+  if(days>0)return{expired:false,text:`还有 ${days} 天 ${hours} 小时`,cls};
+  if(hours>0)return{expired:false,text:`还有 ${hours} 小时 ${mins} 分钟`,cls};
+  return{expired:false,text:`还有 ${mins} 分钟`,cls};
+}
+
+async function loadCalendarData(){
+  if(!STATE.user)return;
+  try{
+    CAL.events=await db().from('calendar_events').select().eq('user_id',STATE.user.id).order('event_date')||[];
+  }catch(e){console.log('加载日程失败',e);CAL.events=[];}
+}
+
+function renderCalendar(){
+  const u=STATE.user;
+  document.getElementById('app').innerHTML=`
+    <div class="cal-page">
+      <div style="padding:20px 16px 8px;"><h2 style="font-size:22px;font-weight:800;">📅 日程管理</h2></div>
+      <div class="cal-upcoming-section">
+        <div class="section-title">⏳ 即将到来的日程</div>
+        <div class="cal-filter-tabs" id="cal-filter-tabs"></div>
+        <div id="cal-upcoming-panel"></div>
+      </div>
+      <div class="cal-calendar-section">
+        <div class="section-title">📅 日历</div>
+        <div id="cal-months"></div>
+      </div>
+      <div class="cal-expired-section" id="cal-expired-section"></div>
+      <div class="cal-add-btn-wrap">
+        <button class="btn btn-primary btn-lg btn-block" onclick="openEventModal()">➕ 添加日程</button>
+      </div>
+    </div>`;
+
+  loadCalendarData().then(()=>{
+    renderFilterTabs();
+    renderUpcomingPanel();
+    renderAllMonths();
+    renderExpiredPanel();
+    startCalCountdownTick();
+  });
+  stopPoll();stopTimer();stopClock();
+}
+
+function renderFilterTabs(){
+  const tabs=document.getElementById('cal-filter-tabs');
+  if(!tabs)return;
+  tabs.innerHTML=[{v:'7',l:'往后7天'},{v:'14',l:'往后14天'},{v:'30',l:'往后30天'}].map(t=>`
+    <div class="cal-filter-tab ${CAL.upcomingFilter===t.v?'active':''}" onclick="switchCalFilter('${t.v}')">${t.l}</div>`).join('');
+}
+
+function switchCalFilter(v){
+  CAL.upcomingFilter=v;CAL.showAllUpcoming=false;
+  renderFilterTabs();renderUpcomingPanel();
+}
+
+function getUpcomingEvents(){
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const cutoff=new Date(today.getTime()+parseInt(CAL.upcomingFilter)*86400000);
+  return CAL.events.filter(ev=>{
+    const d=new Date(ev.event_date+'T'+(ev.event_time||'23:59:59'));
+    return d>=today&&d<cutoff;
+  });
+}
+
+function renderUpcomingPanel(){
+  const panel=document.getElementById('cal-upcoming-panel');
+  if(!panel)return;
+  const upcoming=getUpcomingEvents();
+  if(upcoming.length===0){
+    panel.innerHTML=`<div class="cal-no-upcoming">✨ 未来 ${CAL.upcomingFilter} 天内暂无日程<br><small>点击下方按钮添加一个吧</small></div>`;
+    return;
+  }
+  const showAll=CAL.showAllUpcoming||upcoming.length<=3;
+  const visible=showAll?upcoming:upcoming.slice(0,3);
+  const hidden=showAll?[]:upcoming.slice(3);
+  const colors=['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+  panel.innerHTML=visible.map(ev=>{
+    const cd=calcCountdown(ev);
+    const evColor=ev.color||colors[Math.abs((ev.title||'').length)%colors.length];
+    return`<div class="cal-upcoming-card" style="border-left-color:${evColor}" onclick="openEventModal('${ev.id}')">
+      <div class="cal-upcoming-card-header">
+        <span class="cal-upcoming-card-title">📌 ${esc(ev.title)}</span>
+        <span class="cal-countdown ${cd.cls}">⏱ ${cd.text}</span>
+      </div>
+      <div class="cal-upcoming-card-date">📅 ${fmtDate(ev.event_date)} ${ev.is_all_day?'全天':fmtTime(ev.event_date+'T'+ev.event_time)}</div>
+      ${ev.description?`<div class="cal-upcoming-card-desc">${esc(ev.description.slice(0,60))}${ev.description.length>60?'...':''}</div>`:''}
+    </div>`;
+  }).join('')+(hidden.length>0?`
+    <div class="cal-expand-btn" onclick="CAL.showAllUpcoming=true;renderUpcomingPanel();">▶ 展开更多 (${hidden.length}个)</div>`:'');
+}
+
+function renderAllMonths(){
+  const container=document.getElementById('cal-months');
+  if(!container)return;
+  container.innerHTML='';
+  // Render current month + next month
+  for(let i=0;i<2;i++){
+    let m=CAL.currentMonth+i,y=CAL.currentYear;
+    if(m>11){m-=12;y++;}
+    container.innerHTML+=renderMonthGrid(y,m);
+  }
+}
+
+function renderMonthGrid(year,month){
+  const today=new Date();
+  const firstDay=new Date(year,month,1);
+  const lastDay=new Date(year,month+1,0);
+  const startDow=firstDay.getDay();
+  const daysInMonth=lastDay.getDate();
+  const daysInPrevMonth=new Date(year,month,0).getDate();
+
+  // Build day cells
+  const cells=[];
+  // Previous month fill
+  for(let i=startDow-1;i>=0;i--){
+    const d=daysInPrevMonth-i;
+    cells.push({day:d,month:month-1,year:month===0?year-1:year,isOther:true});
+  }
+  // Current month
+  for(let d=1;d<=daysInMonth;d++){
+    cells.push({day:d,month,year,isOther:false});
+  }
+  // Next month fill
+  const remaining=7-(cells.length%7);if(remaining<7){
+    for(let d=1;d<=remaining;d++){
+      cells.push({day:d,month:month+1,year:month===11?year+1:year,isOther:true});
+    }
+  }
+
+  const monthNames=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  const rows=[];
+  for(let i=0;i<cells.length;i+=7){
+    const week=cells.slice(i,i+7);
+    rows.push(week.map(c=>{
+      const dateStr=`${c.year}-${pd(c.month+1)}-${pd(c.day)}`;
+      const dayEvents=CAL.events.filter(ev=>ev.event_date===dateStr);
+      const isToday=!c.isOther&&c.year===today.getFullYear()&&c.month===today.getMonth()&&c.day===today.getDate();
+      const cls=['cal-day'];
+      if(c.isOther)cls.push('other-month');
+      if(isToday)cls.push('today');
+      if(dayEvents.length>0)cls.push('has-events');
+      let dotsHtml='';
+      if(dayEvents.length>0){
+        const maxDots=3;
+        dotsHtml='<div class="cal-day-dots">'+dayEvents.slice(0,maxDots).map(e=>{
+          const c=e.color||'#4f46e5';
+          return`<span class="cal-day-dot" style="background:${c}"></span>`;
+        }).join('')+'</div>';
+        if(dayEvents.length>maxDots){
+          dotsHtml+=`<div class="cal-day-more">+${dayEvents.length-maxDots}</div>`;
+        }
+      }
+      return`<div class="${cls.join(' ')}" onclick="showDateDetail('${dateStr}')" title="${c.isOther?'':dateStr+' — '+dayEvents.length+'个日程'}">
+        <span>${c.day}</span>${dotsHtml}</div>`;
+    }).join(''));
+  }
+
+  return`<div class="cal-month-wrap">
+    <div class="cal-month-header">
+      <span class="cal-month-title">${year}年 ${monthNames[month]}</span>
+      <div style="display:flex;gap:6px;">
+        ${month===CAL.currentMonth&&year===CAL.currentYear?'':'<button class="cal-month-nav" onclick="navMonth(-1)">◀</button>'}
+        ${month===CAL.currentMonth+1&&year===CAL.currentYear||(CAL.currentMonth===11&&month===0&&year===CAL.currentYear+1)?'<button class="cal-month-nav" onclick="navMonth(1)">▶</button>':''}
+      </div>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-weekday">日</div><div class="cal-weekday">一</div>
+      <div class="cal-weekday">二</div><div class="cal-weekday">三</div>
+      <div class="cal-weekday">四</div><div class="cal-weekday">五</div>
+      <div class="cal-weekday">六</div>
+      ${rows.join('')}
+    </div>
+  </div>`;
+}
+
+function navMonth(dir){
+  CAL.currentMonth+=dir;
+  if(CAL.currentMonth>11){CAL.currentMonth=0;CAL.currentYear++;}
+  if(CAL.currentMonth<0){CAL.currentMonth=11;CAL.currentYear--;}
+  renderAllMonths();
+}
+
+function showDateDetail(dateStr){
+  const dayEvents=CAL.events.filter(ev=>ev.event_date===dateStr);
+  const dateLabel=fmtDate(dateStr);
+  openModal(`<div class="modal-title" style="position:relative;">
+      📅 ${dateLabel}
+      <button class="btn" onclick="closeModal()" style="position:absolute;right:0;top:-8px;font-size:20px;padding:0 4px;">✕</button>
+    </div>
+    ${dayEvents.length===0?'<div style="text-align:center;color:var(--text-muted);padding:20px;">当天暂无日程</div>':dayEvents.map(ev=>{
+      const evColor=ev.color||'#4f46e5';
+      return`<div class="cal-date-event-item" onclick="closeModal();openEventModal('${ev.id}')">
+        <span class="cal-date-event-color" style="background:${evColor}"></span>
+        <div class="cal-date-event-info">
+          <div class="cal-date-event-title">${esc(ev.title)}</div>
+          <div class="cal-date-event-time">${ev.is_all_day?'全天':fmtTime(ev.event_date+'T'+ev.event_time)}${ev.description?' · '+esc(ev.description.slice(0,20)):''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+    <button class="btn btn-primary btn-block mt-16" onclick="closeModal();openEventModal(null,'${dateStr}')">➕ 在此日期添加日程</button>
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">关闭</button>`);
+}
+
+function renderExpiredPanel(){
+  const section=document.getElementById('cal-expired-section');
+  if(!section)return;
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const expired=CAL.events.filter(ev=>{
+    const d=new Date(ev.event_date+'T'+(ev.event_time||'23:59:59'));
+    return d<today;
+  });
+  if(expired.length===0){
+    section.innerHTML='';
+    return;
+  }
+  const colors=['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+  section.innerHTML=`
+    <div class="cal-expired-header" onclick="CAL.showExpired=!CAL.showExpired;renderExpiredPanel();">
+      <span>🕐 已过期日程</span>
+      <span class="cal-expired-badge">${expired.length}</span>
+      <span style="font-size:12px;">${CAL.showExpired?'▲ 收起':'▼ 展开'}</span>
+    </div>
+    ${CAL.showExpired?`<div class="cal-expired-list">${expired.map(ev=>{
+      const evColor=ev.color||colors[Math.abs((ev.title||'').length)%colors.length];
+      return`<div class="cal-expired-item" style="border-left-color:${evColor}">
+        <div class="cal-expired-item-info">
+          <div class="cal-expired-item-title">⚠️ ${esc(ev.title)}</div>
+          <div class="cal-expired-item-date">📅 ${fmtDate(ev.event_date)} ${ev.is_all_day?'全天':fmtTime(ev.event_date+'T'+ev.event_time)}</div>
+        </div>
+        <div class="cal-expired-item-actions">
+          <button class="btn btn-outline" onclick="rescheduleEvent('${ev.id}')">🔄 更换时间</button>
+          <button class="btn btn-outline" style="color:var(--danger);" onclick="deleteCalEvent('${ev.id}')">🗑️ 删除</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`:''}`;
+}
+
+function openEventModal(eventId, presetDate){
+  const ev=eventId?CAL.events.find(e=>e.id===eventId):null;
+  const colors=['#4f46e5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+  const selColor=ev?ev.color:'#4f46e5';
+  const dateVal=ev?ev.event_date:(presetDate||new Date().toISOString().slice(0,10));
+  const timeVal=ev&&ev.event_time?ev.event_time:'';
+  const allday=ev?ev.is_all_day:true;
+  openModal(`<div class="modal-title">${ev?'✏️ 编辑日程':'📌 添加日程'}</div>
+    <div class="form-group"><label class="form-label">日程标题 *</label>
+    <input id="ev-title" class="input" placeholder="例如：提交大作业" maxlength="50" value="${esc(ev?ev.title:'')}"></div>
+    <div class="form-group"><label class="form-label">备注（可选）</label>
+    <textarea id="ev-desc" class="input" placeholder="补充说明..." rows="2">${esc(ev&&ev.description?ev.description:'')}</textarea></div>
+    <div class="form-group"><label class="form-label">日期</label>
+    <input id="ev-date" class="input" type="date" value="${dateVal}"></div>
+    <div class="form-group"><label class="form-label">时间</label>
+    <input id="ev-time" class="input" type="time" value="${timeVal}" ${allday?'disabled':''}></div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="ev-allday" ${allday?'checked':''} onchange="toggleEvTime()"> 全天事件
+    </label></div>
+    <div class="form-group"><label class="form-label">标签颜色</label>
+    <div class="cal-color-picker" id="cal-color-picker">${colors.map(c=>`
+      <div class="cal-color-dot ${c===selColor?'selected':''}" style="background:${c}" onclick="selectCalColor('${c}')" data-color="${c}"></div>`).join('')}</div></div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="saveCalEvent('${ev?ev.id:''}')">💾 ${ev?'保存修改':'确认添加'}</button>
+    ${ev?`<button class="btn btn-outline btn-block mt-16" style="color:var(--danger);" onclick="deleteCalEvent('${ev.id}')">🗑️ 删除此日程</button>`:''}
+    <button class="btn btn-outline btn-block mt-16" onclick="closeModal()">取消</button>`);
+  // Store selected color in a temp var on window
+  window.__calSelectedColor=selColor;
+  if(!ev)setTimeout(()=>document.getElementById('ev-title')?.focus(),300);
+}
+
+function toggleEvTime(){
+  const allday=document.getElementById('ev-allday');
+  const timeInput=document.getElementById('ev-time');
+  if(timeInput){timeInput.disabled=allday.checked;if(allday.checked)timeInput.value='';}
+}
+
+function selectCalColor(color){
+  window.__calSelectedColor=color;
+  document.querySelectorAll('#cal-color-picker .cal-color-dot').forEach(d=>d.classList.toggle('selected',d.dataset.color===color));
+}
+
+async function saveCalEvent(editId){
+  const title=document.getElementById('ev-title').value.trim();
+  const desc=document.getElementById('ev-desc').value.trim();
+  const date=document.getElementById('ev-date').value;
+  const time=document.getElementById('ev-time').value;
+  const allday=document.getElementById('ev-allday').checked;
+  const color=window.__calSelectedColor||'#4f46e5';
+  if(!title)return toast('请输入日程标题','error');
+  if(!date)return toast('请选择日期','error');
+  try{
+    const data={user_id:STATE.user.id,title,description:desc||null,event_date:date,event_time:allday?null:time||null,color,is_all_day:allday};
+    if(editId){
+      await db().from('calendar_events').eq('id',editId).eq('user_id',STATE.user.id).update(data);
+      toast('日程已更新！📅','success');
+    }else{
+      await db().from('calendar_events').insert(data);
+      toast('日程已添加！📅','success');
+    }
+    closeModal();
+    await loadCalendarData();
+    renderUpcomingPanel();renderAllMonths();renderExpiredPanel();
+  }catch(e){toast('保存失败: '+(e.message||'未知错误'),'error');}
+}
+
+async function deleteCalEvent(id){
+  if(!confirm('确定删除此日程吗？此操作不可恢复。'))return;
+  try{
+    await db().from('calendar_events').eq('id',id).eq('user_id',STATE.user.id).delete();
+    closeModal();toast('日程已删除','success');
+    await loadCalendarData();
+    renderUpcomingPanel();renderAllMonths();renderExpiredPanel();
+  }catch(e){toast('删除失败: '+(e.message||'未知错误'),'error');}
+}
+
+function rescheduleEvent(id){
+  // Open edit modal - same as openEventModal with eventId
+  closeModal();
+  openEventModal(id);
+}
+
+function startCalCountdownTick(){
+  stopCalTimer();
+  CAL.countdownTimer=setInterval(()=>{
+    // Only re-render if on calendar page
+    if(window.location.hash==='#calendar')renderUpcomingPanel();
+    else stopCalTimer();
+  },60000);
 }
 
 // ===== 启动！=====
